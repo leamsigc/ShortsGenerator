@@ -1,0 +1,24 @@
+version: '3.5'
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 8080:8080
+    env_file:
+      - .env
+    volumes:
+      - .:/home/app
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.FE
+    ports:
+      - ${FE_PORT}:3000
+  nuxt:
+    build:
+      context: .
+      dockerfile: Dockerfile.FE.Nuxt
+    ports:
+      - ${FE_NUXT}:3000

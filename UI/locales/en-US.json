@@ -1,0 +1,58 @@
+{
+  "layouts": {
+    "header": {
+      "toggleFullScreen": "Full Screen"
+    }
+  },
+  "searchDialog": {
+    "searchPlaceholder": "Search...",
+    "applications": "Applications",
+    "chatBot": "Chat",
+    "actions": "Actions",
+    "action": "Full Screen",
+    "noResultsFound": "No Resoults for the fallowing qury: ",
+    "toSelectTooltip": "Select",
+    "toNavigateTooltip": "Navigate",
+    "actionsOptions": {
+      "themeToggle": "Switch theme"
+    }
+  },
+  "video": {
+    "generate": {
+      "step": {
+        "one": {
+          "title": "Please enter a video subject",
+          "cancel": "Cancel",
+          "generate": "Generate script",
+          "videoSubject": {
+            "placeholder": "Video subject..."
+          },
+          "extraPrompt": {
+            "placeholder": "Extra prompt..."
+          }
+        },
+        "two": {
+          "script": {
+            "placeholder": "Video generated script..."
+          }
+        }
+      }
+    }
+  },
+  "view": {
+    "generate": {
+      "setting": {
+        "label": "Settings"
+      },
+      "music": {
+        "label": "Music"
+      },
+      "voice": {
+        "label": "Voice"
+      },
+      "subtitles": {
+        "label": "Subtitle"
+      }
+    }
+  }
+}
