@@ -127,9 +127,9 @@ class Shorts:
             prompt = self.globalSettings["scriptSettings"]["defaultPromptStart"]
 
         prompt += f"""
-        
-        Subject: {self.video_subject}
-        Number of paragraphs: {self.paragraph_number}
+        # Initialization:
+        - video subject: {self.video_subject}
+        - number of paragraphs: {self.paragraph_number}
         {self.extra_prompt}
         
         """

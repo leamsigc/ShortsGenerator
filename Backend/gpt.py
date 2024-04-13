@@ -60,7 +60,6 @@ def generate_response(prompt: str, ai_model: str) -> str:
         response = response_model.text
 
     else:
-
         raise ValueError("Invalid AI model selected.")
 
     return response
@@ -84,31 +83,39 @@ def get_search_terms(video_subject: str, amount: int, script: str, ai_model: str
 
     # Build prompt
     prompt = f"""
-    Generate {amount} search terms for stock videos,
-    depending on the subject of a video.
-    Subject: {video_subject}
+    # Role: Video Search Terms Generator
+    ## Goals:
+    Generate {amount} search terms for stock videos, depending on the subject of a video.
 
-    The search terms are to be returned as
-    a JSON-Array of strings.
+    ## Constrains:
+    1. the search terms are to be returned as a json-array of strings.
+    2. each search term should consist of 1-3 words, always add the main subject of the video.
+    3. you must only return the json-array of strings. you must not return anything else. you must not return the script.
+    4. the search terms must be related to the subject of the video.
+    5. reply with english search terms only.
 
-    Each search term should consist of 1-3 words,
-    always add the main subject of the video.
+    ## Output Example:
+    ["search term 1", "search term 2", "search term 3","search term 4","search term 5"]
     
-    YOU MUST ONLY RETURN THE JSON-ARRAY OF STRINGS.
-    YOU MUST NOT RETURN ANYTHING ELSE. 
-    YOU MUST NOT RETURN THE SCRIPT.
-    
-    The search terms must be related to the subject of the video.
-    Here is an example of a JSON-Array of strings:
-    ["search term 1", "search term 2", "search term 3"]
+    ## Context:
+    ### Video Subject
+    {video_subject}
 
-    For context, here is the full text:
+    ### Video Script
     {script}
-    """
+
+    Please note that you must use English for generating video search terms; Chinese is not accepted.
+    """.strip()
+
+
+    # Let user know
+    print(colored(f"Generating {amount} search terms for {video_subject}...", "cyan"))
 
     # Generate search terms
     response = generate_response(prompt, ai_model)
 
+    # Let user know
+    print(colored(f"Response: {response}", "cyan"))
     # Parse response into a list of search terms
     search_terms = []
     

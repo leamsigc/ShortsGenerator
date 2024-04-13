@@ -15,6 +15,8 @@ const API_URL = "http://localhost:8080";
 
 const { globalSettings } = useGlobalSettings();
 const { video } = useVideoSettings();
+console.log(video.value);
+
 const showModal = ref(!video.value.script);
 const extraPrompt = ref(false);
 

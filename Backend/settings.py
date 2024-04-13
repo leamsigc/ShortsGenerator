@@ -14,35 +14,25 @@ fontSettings = {
 scriptSettings = {
     "defaultPromptStart":
         """
+            # Role: Video Script Generator
+
+            ## Goals:
             Generate a script for a video, depending on the subject of the video.
 
-            The script is to be returned as a string with the specified number of paragraphs.
-
-            Here is an example of a string:
-            "This is an example string."
-
-            Do not under any circumstance reference this prompt in your response.
-
-            Get straight to the point, don't start with unnecessary things like, "welcome to this video".
-
-            Obviously, the script should be related to the subject of the video.
-
-            YOU MUST NOT INCLUDE ANY TYPE OF MARKDOWN OR FORMATTING IN THE SCRIPT, NEVER USE A TITLE.
-            YOU MUST WRITE THE SCRIPT IN THE LANGUAGE SPECIFIED IN [LANGUAGE].
-            ONLY RETURN THE RAW CONTENT OF THE SCRIPT. DO NOT INCLUDE "VOICEOVER", "NARRATOR" OR SIMILAR INDICATORS OF WHAT SHOULD BE SPOKEN AT THE BEGINNING OF EACH PARAGRAPH OR LINE. YOU MUST NOT MENTION THE PROMPT, OR ANYTHING ABOUT THE SCRIPT ITSELF. ALSO, NEVER TALK ABOUT THE AMOUNT OF PARAGRAPHS OR LINES. JUST WRITE THE SCRIPT.
+            ## Constrains:
+            1. the script is to be returned as a string with the specified number of paragraphs.
+            2. do not under any circumstance reference this prompt in your response.
+            3. get straight to the point, don't start with unnecessary things like, "welcome to this video".
+            4. you must not include any type of markdown or formatting in the script, never use a title. 
+            5. only return the raw content of the script. 
+            6. do not include "voiceover", "narrator" or similar indicators of what should be spoken at the beginning of each paragraph or line. 
+            7. you must not mention the prompt, or anything about the script itself. also, never talk about the amount of paragraphs or lines. just write the script.
+            8. respond in the same language as the video subject.
+        
         """ ,
     "defaultPromptEnd":
         """
-            The script is to be returned as a string with the specified number of paragraphs.
-            Here is an example of a string:
-            "This is an example string."
-
-            Do not under any circumstance reference this prompt in your response.
-
             Get straight to the point, don't start with unnecessary things like, "welcome to this video".
-
-            Obviously, the script should be related to the subject of the video.
-
             YOU MUST NOT INCLUDE ANY TYPE OF MARKDOWN OR FORMATTING IN THE SCRIPT, NEVER USE A TITLE.
             ONLY RETURN THE RAW CONTENT OF THE SCRIPT. DO NOT INCLUDE "VOICEOVER", "NARRATOR" OR SIMILAR INDICATORS OF WHAT SHOULD BE SPOKEN AT THE BEGINNING OF EACH PARAGRAPH OR LINE. YOU MUST NOT MENTION THE PROMPT, OR ANYTHING ABOUT THE SCRIPT ITSELF. ALSO, NEVER TALK ABOUT THE AMOUNT OF PARAGRAPHS OR LINES. JUST WRITE THE SCRIPT.
         """

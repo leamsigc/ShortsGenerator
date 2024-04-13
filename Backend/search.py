@@ -26,6 +26,9 @@ def search_for_stock_videos(query: str, api_key: str, it: int, min_dur: int) -> 
     # Send the request
     r = requests.get(qurl, headers=headers)
 
+    # log response
+    print(colored(f"Response: {r.status_code}", "green"))
+
     # Parse the response
     response = r.json()
 
@@ -40,12 +43,14 @@ def search_for_stock_videos(query: str, api_key: str, it: int, min_dur: int) -> 
             if response["videos"][i]["duration"] < min_dur:
                 continue
             raw_urls = response["videos"][i]["video_files"]
+
+
             temp_video_url = ""
             
             # loop through each url to determine the best quality
             for video in raw_urls:
                 # Check if video has a valid download link
-                if ".com/external" in video["link"]:
+                if ".com" in video["link"]:
                     # Only save the URL with the largest resolution
                     if (video["width"]*video["height"]) > video_res:
                         temp_video_url = video["link"]

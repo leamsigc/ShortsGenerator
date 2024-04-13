@@ -223,6 +223,9 @@ def generate_script_only():
 
 
     search_terms = videoClass.GenerateSearchTerms()
+    
+    # Show the search terms 
+    print(colored(f"Search terms: {', '.join(search_terms)}", "cyan"))
 
     return jsonify(
         {
