@@ -177,27 +177,36 @@ class Shorts:
         return self.search_terms
 
     #Download the videos base on the search terms from pexel api
-    def DownloadVideos(self):
+    def DownloadVideos(self, selectedVideoUrls):
         global GENERATING
+
         # Search for videos
-        for search_term in self.search_terms:
-            global GENERATING
-            if not GENERATING:
-                return jsonify(
-                    {
-                        "status": "error",
-                        "message": "Video generation was cancelled.",
-                        "data": [],
-                    }
+        # Check if the selectedVideoUrls is empty
+        if selectedVideoUrls and len(selectedVideoUrls) > 0:
+            print(colored(f"Selected videos: {selectedVideoUrls}", "green"))
+            # filter the selectedVideoUrls is a Array of objects with videoUrl object that has a link key with a value we use the value of the link key
+            self.video_urls = [video_url["videoUrl"]["link"] for video_url in selectedVideoUrls]
+            # log the selectedVideoUrls
+            print(colored(f"Selected video urls: {self.video_urls}", "green"))
+        else:
+            for search_term in self.search_terms:
+                global GENERATING
+                if not GENERATING:
+                    return jsonify(
+                        {
+                            "status": "error",
+                            "message": "Video generation was cancelled.",
+                            "data": [],
+                        }
+                    )
+                found_urls = search_for_stock_videos(
+                    search_term, os.getenv("PEXELS_API_KEY"), self.videos_quantity_search, self.min_duration_search
                 )
-            found_urls = search_for_stock_videos(
-                search_term, os.getenv("PEXELS_API_KEY"), self.videos_quantity_search, self.min_duration_search
-            )
-            # Check for duplicates
-            for url in found_urls:
-                if url not in self.video_urls:
-                    self.video_urls.append(url)
-                    break
+                # Check for duplicates
+                for url in found_urls:
+                    if url not in self.video_urls:
+                        self.video_urls.append(url)
+                        break
 
         # Check if video_urls is empty
         if not self.video_urls:

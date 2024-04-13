@@ -65,6 +65,7 @@ const HandleGenerateVideo = async () => {
         voice: video.value.voice || globalSettings.value.voice,
         search: video.value.search.split(","),
         aiModel: video.value.aiModel || globalSettings.value.aiModel,
+        selectedVideoUrls: video.value.selectedVideoUrls,
       },
     });
     video.value.finalVideoUrl = data.finalVideo;
@@ -119,10 +120,16 @@ const HandleClearAndGoToVideos = () => {
     aiModel: "",
     extraPrompt: "",
     videoSubject: "",
+    selectedVideoUrls: [],
   };
   settingsModal.value = "IDLE";
   showModal.value = true;
   router.push("/videos");
+};
+
+const SearchModal = ref(false);
+const HandleOpenSearchVideo = () => {
+  SearchModal.value = !SearchModal.value;
 };
 </script>
 
@@ -224,6 +231,14 @@ const HandleClearAndGoToVideos = () => {
               <span class="font-bold"> Search:</span>
               <span class="text-sm mt-2 truncate"> {{ video.search }}</span>
             </article>
+            <n-button
+              ghost
+              type="primary"
+              class="mt-5"
+              @click="HandleOpenSearchVideo"
+            >
+              Search and select videos
+            </n-button>
           </section>
           <section
             class="voice dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5"
@@ -379,6 +394,28 @@ const HandleClearAndGoToVideos = () => {
   >
     <div class="p-10" v-if="settingsModal !== 'IDLE'">
       <GenerateScript :active-tab="settingsModal" />
+    </div>
+  </n-modal>
+
+  <n-modal
+    v-model:show="SearchModal"
+    :mask-closable="false"
+    closable
+    @close="SearchModal = false"
+    preset="card"
+    class="max-w-3xl"
+    :content-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
+    :header-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
+  >
+    <div class="p-10">
+      <n-tabs type="line" animated>
+        <n-tab-pane name="VIDEO_SEARCH" tab="Search and select" active>
+          <VideoSearch />
+        </n-tab-pane>
+        <n-tab-pane name="VIDEO_SELECTED" tab="Selected Videos">
+          <VideoSelected />
+        </n-tab-pane>
+      </n-tabs>
     </div>
   </n-modal>
 </template>

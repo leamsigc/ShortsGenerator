@@ -6,7 +6,7 @@ description: 'MoneyPrinter Documentation'
 
 # Documentation related to the Money Printer UI
 
-[Project roadmap](/docs/road-map)
+[Project roadmap](/docs/road-map)  | [How to use](/docs/how-to-use)
 
 ## Getting started
 

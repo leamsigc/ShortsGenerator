@@ -35,4 +35,9 @@ export default defineNuxtConfig({
     langDir: "locales",
     defaultLocale: "en",
   },
+  runtimeConfig: {
+    public: {
+      pexelsApiKey: process.env.PEXELS_API_KEY,
+    },
+  },
 });

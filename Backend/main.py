@@ -256,6 +256,7 @@ def search_and_download():
     script = data["script"]
     ai_model = data["aiModel"]
     voice = data["voice"]
+    selectedVideoUrls = data.get("selectedVideoUrls",[])
 
     # Extra options:
     custom_video = data.get("videoUrls",[])
@@ -273,7 +274,7 @@ def search_and_download():
     videoClass.final_script = script
     videoClass.subtitles_position = subtitles_position
 
-    videoClass.DownloadVideos()
+    videoClass.DownloadVideos(selectedVideoUrls)
 
     videoClass.GenerateVoice(voice)
 
