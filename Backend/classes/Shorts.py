@@ -202,6 +202,7 @@ class Shorts:
                 found_urls = search_for_stock_videos(
                     search_term, os.getenv("PEXELS_API_KEY"), self.videos_quantity_search, self.min_duration_search
                 )
+                # check if found_urls is empty
                 # Check for duplicates
                 for url in found_urls:
                     if url not in self.video_urls:
@@ -242,6 +243,8 @@ class Shorts:
         # Let user know
         print(colored("[+] Videos downloaded!", "green"))
         self.video_paths = video_paths
+        # print the video_paths
+        print(colored(f"Video paths: {self.video_paths}", "green"))
 
 
     def GenerateMetadata(self):

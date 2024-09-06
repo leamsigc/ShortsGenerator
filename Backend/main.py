@@ -281,6 +281,20 @@ def search_and_download():
     videoClass.CombineVideos()
 
     videoClass.Stop()
+
+
+
+    # FInal videoClass.get_final_video_path
+    print(colored(f"[X] Next FInal video: {videoClass.get_final_video_path}", "green"))
+    # if final video path is None return status code 500
+    if videoClass.get_final_video_path is None:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Video generation was cancelled.",
+                "data": [],
+            }
+        ),500
     
     return jsonify(
         {

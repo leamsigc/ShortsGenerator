@@ -6,6 +6,7 @@ RUN npm install -g pnpm
 WORKDIR /app
 
 # copy over package.json files
+COPY .env .
 COPY ./UI .
 RUN npm config set registry https://registry.npmjs.org/
 RUN pnpm i --ignore-scripts --unsafe-perm

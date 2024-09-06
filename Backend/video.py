@@ -21,23 +21,45 @@ load_dotenv("../.env")
 ASSEMBLY_AI_API_KEY = os.getenv("ASSEMBLY_AI_API_KEY")
 
 
+
 def save_video(video_url: str, directory: str = "../static/assets/temp") -> str:
     """
-    Saves a video from a given URL and returns the path to the video.
+    Downloads a video from the given URL and saves it to a specified directory.
 
     Args:
-        video_url (str): The URL of the video to save.
-        directory (str): The path of the temporary directory to save the video to
+        video_url (str): The URL of the video to download.
+        directory (str): The path of the temporary directory to save the video to.
 
     Returns:
         str: The path to the saved video.
     """
+    # Ensure the directory exists
+    os.makedirs(directory, exist_ok=True)
+
     video_id = uuid.uuid4()
     video_path = f"{directory}/{video_id}.mp4"
-    with open(video_path, "wb") as f:
-        f.write(requests.get(video_url).content)
 
-    return video_path
+    # Set headers to mimic a browser request
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0"
+    }
+
+    try:
+        # Stream the video content
+        response = requests.get(video_url, headers=headers, stream=True)
+        response.raise_for_status()  # Check if the request was successful
+
+        # Write the video content to the file in chunks
+        with open(video_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:  # Filter out keep-alive chunks
+                    f.write(chunk)
+
+        return video_path
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading the video: {e}")
+        return None
 
 
 def __generate_subtitles_assemblyai(audio_path: str, voice: str) -> str:
@@ -170,7 +192,13 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
     # Add downloaded clips over and over until the duration of the audio (max_duration) has been reached
     while tot_dur < max_duration:
         for video_path in video_paths:
+
+            print(f"Video path: {video_path}")
             clip = VideoFileClip(video_path)
+            # if there is no clip go to the next one
+            if clip is None:
+                continue
+
             clip = clip.without_audio()
             # Check if clip is longer than the remaining audio
             if (max_duration - tot_dur) < clip.duration:
@@ -260,8 +288,8 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
     result = result.set_audio(audio)
     print(colored("[+] Audio Done...", "green"))
 
+    video_name = f"../static/generated_videos/{uuid4()}-final.mp4"
     print(colored("[+] Writing video...", "green"))
-    video_name = f"static/assets/{uuid4()}-final.mp4"
-    result.write_videofile(f"../{video_name}", threads=3)
+    result.write_videofile(f"{video_name}", threads=2)
 
     return video_name

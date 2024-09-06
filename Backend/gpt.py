@@ -17,6 +17,9 @@ openai.api_key = OPENAI_API_KEY
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 genai.configure(api_key=GOOGLE_API_KEY)
 
+# Configure g4f
+g4f.debug.logging = True  # Enable debug logging
+g4f.debug.version_check = False  # Disable automatic version checking
 
 def generate_response(prompt: str, ai_model: str) -> str:
     """
@@ -26,34 +29,26 @@ def generate_response(prompt: str, ai_model: str) -> str:
         video_subject (str): The subject of the video.
         ai_model (str): The AI model to use for generation.
 
-
     Returns:
-
         str: The response from the AI model.
-
     """
 
     if ai_model == 'g4f':
-
         response = g4f.ChatCompletion.create(
-
-            model=g4f.models.gpt_35_turbo_16k_0613,
-
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
-
+            stream=False
         )
+        # Ensure we return a string
+        return response if isinstance(response, str) else str(response)
 
     elif ai_model in ["gpt3.5-turbo", "gpt4"]:
-
         model_name = "gpt-3.5-turbo" if ai_model == "gpt3.5-turbo" else "gpt-4-1106-preview"
-
         response = openai.chat.completions.create(
-
             model=model_name,
-
             messages=[{"role": "user", "content": prompt}],
-
         ).choices[0].message.content
+
     elif ai_model == 'gemmini':
         model = genai.GenerativeModel('gemini-pro')
         response_model = model.generate_content(prompt)
