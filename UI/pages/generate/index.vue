@@ -10,6 +10,13 @@
  * @todo [ ] Integration test.
  * @todo [✔] Update the typescript.
  */
+interface Step {
+  text: string; // Display text for the step
+  afterText?: string; // Text to show after step completion
+  async?: boolean; // If true, waits for external trigger to proceed
+  duration?: number; // Duration in ms before proceeding (default: 2000)
+  action?: () => void; // Function to execute when step is active
+}
 const router = useRouter();
 const API_URL = "http://localhost:8080";
 
@@ -47,9 +54,71 @@ const HandleGenerateScript = async () => {
     currentState.value = "Error";
   }
 };
+// State management
+const loaderStates = reactive({
+  isProcessing: false,
+  isSavingOrder: false,
+  sendingMails: false,
+});
+const uiState = reactive({
+  isSimpleLoading: false,
+  isAfterTextLoading: false,
+  closeSimple: () => {
+    uiState.isSimpleLoading = false;
+  },
+  closeAsync: () => {
+    uiState.isAfterTextLoading = false;
+  },
+});
+// Async loading steps configuration
+const asyncLoadingSteps = computed<Step[]>(() => [
+  {
+    text: "Checking Payment",
+    async: loaderStates.isProcessing,
+    afterText: "Payment Verified",
+  },
+  {
+    text: "Saving Order",
+    async: loaderStates.isSavingOrder,
+    afterText: "Order Saved",
+  },
+  {
+    text: "Sending Confirmation Email",
+    async: loaderStates.sendingMails,
+    afterText: "Email Sent",
+  },
+  {
+    text: "Redirecting",
+    duration: 1000,
+    action: handleAsyncLoadingComplete,
+  },
+]);
+function handleAsyncLoadingComplete() {
+  uiState.isAfterTextLoading = false;
+}
+
 
 const HandleGenerateVideo = async () => {
   try {
+
+    // Reset states
+    uiState.isAfterTextLoading = true;
+    loaderStates.isProcessing = true;
+    loaderStates.isSavingOrder = true;
+    loaderStates.sendingMails = true;
+
+    // Simulate async operations
+    function simulateAsyncStep(stateProp: keyof typeof loaderStates, delay: number) {
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          loaderStates[stateProp] = false;
+          resolve();
+        }, delay);
+      });
+    }
+
+
+
     currentState.value = "loading";
     showModal.value = false;
     const { data } = await $fetch<{
@@ -131,10 +200,18 @@ const SearchModal = ref(false);
 const HandleOpenSearchVideo = () => {
   SearchModal.value = !SearchModal.value;
 };
+function handleComplete() {
+  // Handle Loading Complete
+}
+// Event handlers
+function handleStateChange(state: number) {
+  // Handle Loading State Change
+}
 </script>
 
 <template>
   <n-modal v-model:show="showModal" :mask-closable="false">
+
     <div class="bg-slate-100 dark:bg-gray-950 p-10 py-16 dark:text-slate-100 rounded-2xl min-w-2xl">
       <h1 class="text-3xl font-extrabold">
         {{ $t("video.generate.step.one.title") }}
@@ -173,6 +250,8 @@ const HandleOpenSearchVideo = () => {
       </section>
     </div>
   </n-modal>
+  <MultiStepLoader :steps="asyncLoadingSteps" :loading="uiState.isAfterTextLoading" @state-change="handleStateChange"
+    @complete="handleComplete" @close="uiState.closeAsync" />
   <n-spin :show="currentState === 'loading'">
     <div>
       <main class="grid grid-cols-5 gap-5 pr-10 relative">

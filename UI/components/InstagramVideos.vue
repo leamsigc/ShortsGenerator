@@ -38,6 +38,7 @@ const handleSelectVideo = (videoName: string) => {
     video.value.selectedVideoUrls.push({
         url: `static/generated_videos/instagram/${videoName}`,
         image: `${URL}/static/generated_videos/instagram/${videoName}`,
+        videoUrl: { fileType: 'mp4', link: `${URL}/static/generated_videos/instagram/${videoName}`, quality: 'hd' },
         type: 'local'
     });
 }
