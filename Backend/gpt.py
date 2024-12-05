@@ -1,7 +1,7 @@
 import re
 import json
 import g4f
-import openai
+# from openai import OpenAI
 from typing import Tuple, List  
 from termcolor import colored
 from dotenv import load_dotenv
@@ -9,13 +9,20 @@ import os
 import google.generativeai as genai
 
 # Load environment variables
-load_dotenv("../.env")
+if os.path.exists(".env"):
+    load_dotenv(".env")
+else:
+    load_dotenv("../.env")
 
 # Set environment variables
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-openai.api_key = OPENAI_API_KEY
+# openai.api_key = OPENAI_API_KEY
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 genai.configure(api_key=GOOGLE_API_KEY)
+
+# openaiClient = OpenAI(
+#     api_key=OPENAI_API_KEY ,  # This is the default and can be omitted
+# )
 
 # Configure g4f
 g4f.debug.logging = True  # Enable debug logging
@@ -34,20 +41,22 @@ def generate_response(prompt: str, ai_model: str) -> str:
     """
 
     if ai_model == 'g4f':
-        response = g4f.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        client = g4f.Client()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             stream=False
+            # Add any other necessary parameters
         )
-        # Ensure we return a string
-        return response if isinstance(response, str) else str(response)
+        return response if isinstance(response, str) else str(response.choices[0].message.content)
 
-    elif ai_model in ["gpt3.5-turbo", "gpt4"]:
-        model_name = "gpt-3.5-turbo" if ai_model == "gpt3.5-turbo" else "gpt-4-1106-preview"
-        response = openai.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": prompt}],
-        ).choices[0].message.content
+    # elif ai_model in ["gpt3.5-turbo", "gpt4"]:
+        
+    #     model_name = "gpt-3.5-turbo" if ai_model == "gpt3.5-turbo" else "gpt-4-1106-preview"
+    #     response = openaiClient.chat.completions.create(
+    #         model=model_name,
+    #         messages=[{"role": "user", "content": prompt}],
+    #     ).choices[0].message.content
 
     elif ai_model == 'gemmini':
         model = genai.GenerativeModel('gemini-pro')

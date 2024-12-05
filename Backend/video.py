@@ -22,7 +22,7 @@ ASSEMBLY_AI_API_KEY = os.getenv("ASSEMBLY_AI_API_KEY")
 
 
 
-def save_video(video_url: str, directory: str = "../static/assets/temp") -> str:
+def save_video(video_url: str, directory: str = "static/assets/temp") -> str:
     """
     Downloads a video from the given URL and saves it to a specified directory.
 
@@ -37,7 +37,7 @@ def save_video(video_url: str, directory: str = "../static/assets/temp") -> str:
     os.makedirs(directory, exist_ok=True)
 
     video_id = uuid.uuid4()
-    video_path = f"{directory}/{video_id}.mp4"
+    video_path = os.path.join(directory, f"{video_id}.mp4")
 
     # Set headers to mimic a browser request
     headers = {
@@ -45,7 +45,6 @@ def save_video(video_url: str, directory: str = "../static/assets/temp") -> str:
     }
 
     try:
-        # Stream the video content
         response = requests.get(video_url, headers=headers, stream=True)
         response.raise_for_status()  # Check if the request was successful
 
@@ -59,6 +58,9 @@ def save_video(video_url: str, directory: str = "../static/assets/temp") -> str:
 
     except requests.exceptions.RequestException as e:
         print(f"Error downloading the video: {e}")
+        return None
+    except Exception as e:
+        print(f"Error processing the video: {e}")
         return None
 
 
@@ -145,7 +147,7 @@ def generate_subtitles(audio_path: str, sentences: List[str], audio_clips: List[
         srt_equalizer.equalize_srt_file(srt_path, srt_path, max_chars)
 
     # Save subtitles
-    subtitles_path = f"../static/assets/subtitles/{uuid.uuid4()}.srt"
+    subtitles_path = os.path.join("static/assets/subtitles", f"{uuid.uuid4()}.srt")
 
     if ASSEMBLY_AI_API_KEY is not None and ASSEMBLY_AI_API_KEY != "":
         print(colored("[+] Creating subtitles using AssemblyAI", "blue"))
@@ -179,7 +181,7 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
         str: The path to the combined video.
     """
     video_id = uuid.uuid4()
-    combined_video_path = f"../static/assets/temp/{video_id}-combined.mp4"
+    combined_video_path = os.path.join("static/assets/temp", f"{video_id}-combined.mp4")
     
     # Required duration of each clip
     req_dur = max_duration / len(video_paths)
@@ -276,6 +278,7 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
         horizontal_subtitles_position, vertical_subtitles_position = subtitles_position.split(",")
         
     # Burn the subtitles into the video
+    print(colored(f"[+] Subtitles Path: {subtitles_path}", "green"))
     subtitles = SubtitlesClip(subtitles_path, generator)
     result = CompositeVideoClip([
         VideoFileClip(combined_video_path),
@@ -288,7 +291,7 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
     result = result.set_audio(audio)
     print(colored("[+] Audio Done...", "green"))
 
-    video_name = f"../static/generated_videos/{uuid4()}-final.mp4"
+    video_name = os.path.join("static/generated_videos", f"{uuid4()}-final.mp4")
     print(colored("[+] Writing video...", "green"))
     result.write_videofile(f"{video_name}", threads=2)
 

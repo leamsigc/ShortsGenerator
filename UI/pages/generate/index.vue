@@ -135,46 +135,29 @@ const HandleOpenSearchVideo = () => {
 
 <template>
   <n-modal v-model:show="showModal" :mask-closable="false">
-    <div
-      class="bg-slate-100 dark:bg-gray-950 p-10 py-16 dark:text-slate-100 rounded-2xl min-w-2xl"
-    >
+    <div class="bg-slate-100 dark:bg-gray-950 p-10 py-16 dark:text-slate-100 rounded-2xl min-w-2xl">
       <h1 class="text-3xl font-extrabold">
         {{ $t("video.generate.step.one.title") }}
       </h1>
 
       <n-form-item :show-label="false" class="mt-10">
-        <n-input
-          v-model:value="video.videoSubject"
-          :placeholder="$t('video.generate.step.one.videoSubject.placeholder')"
-          type="textarea"
-          show-count
-          clearable
+        <n-input v-model:value="video.videoSubject"
+          :placeholder="$t('video.generate.step.one.videoSubject.placeholder')" type="textarea" show-count clearable
           :autosize="{
             minRows: 10,
             maxRows: 20,
-          }"
-          class="p-5 h-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none"
-        />
+          }" class="p-5 h-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none" />
       </n-form-item>
       <n-form-item label="Extra Prompt:">
         <div class="w-full">
           <n-switch v-model:value="extraPrompt"> </n-switch>
           <n-collapse-transition :show="extraPrompt">
             <n-form-item :show-label="false" class="mt-10">
-              <n-input
-                v-model:value="video.extraPrompt"
-                :placeholder="
-                  $t('video.generate.step.one.extraPrompt.placeholder')
-                "
-                type="textarea"
-                show-count
-                clearable
-                :autosize="{
+              <n-input v-model:value="video.extraPrompt" :placeholder="$t('video.generate.step.one.extraPrompt.placeholder')
+                " type="textarea" show-count clearable :autosize="{
                   minRows: 5,
                   maxRows: 8,
-                }"
-                class="p-5 w-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none"
-              />
+                }" class="p-5 w-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none" />
             </n-form-item>
           </n-collapse-transition>
         </div>
@@ -197,23 +180,14 @@ const HandleOpenSearchVideo = () => {
         <section class="grid grid-cols-2 gap-10 col-span-3">
           <section class="input col-span-2 rounded-lg min-h-96">
             <n-form-item :show-label="false" path="script">
-              <n-input
-                v-model:value="video.script"
-                :placeholder="$t('video.generate.step.two.script.placeholder')"
-                type="textarea"
-                show-count
-                clearable
-                :autosize="{
+              <n-input v-model:value="video.script" :placeholder="$t('video.generate.step.two.script.placeholder')"
+                type="textarea" show-count clearable :autosize="{
                   minRows: 18,
                   maxRows: 25,
-                }"
-                class="p-5 h-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none"
-              />
+                }" class="p-5 h-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none" />
             </n-form-item>
           </section>
-          <section
-            class="setting dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5"
-          >
+          <section class="setting dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="material-symbols:settings" size="24" />
               <span class="text-lg ml-2">
@@ -231,18 +205,11 @@ const HandleOpenSearchVideo = () => {
               <span class="font-bold"> Search:</span>
               <span class="text-sm mt-2 truncate"> {{ video.search }}</span>
             </article>
-            <n-button
-              ghost
-              type="primary"
-              class="mt-5"
-              @click="HandleOpenSearchVideo"
-            >
+            <n-button ghost type="primary" class="mt-5" @click="HandleOpenSearchVideo">
               Search and select videos
             </n-button>
           </section>
-          <section
-            class="voice dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5"
-          >
+          <section class="voice dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="icon-park-outline:voice" size="24" />
               <span class="text-lg ml-2">
@@ -256,18 +223,14 @@ const HandleOpenSearchVideo = () => {
                 </n-button>
               </div>
             </header>
-            <article
-              class="mt-8 opacity-80 text-center flex items-center justify-center"
-            >
+            <article class="mt-8 opacity-80 text-center flex items-center justify-center">
               <Icon name="material-symbols:person" size="36" />
               <span class="ml-2 font-black text-lg">
                 {{ video.voice || globalSettings.voice }}
               </span>
             </article>
           </section>
-          <section
-            class="music dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5"
-          >
+          <section class="music dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="icon-park-outline:music" size="24" />
               <span class="text-lg ml-2">
@@ -289,9 +252,7 @@ const HandleOpenSearchVideo = () => {
               </section>
             </article>
           </section>
-          <section
-            class="subtitle dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5"
-          >
+          <section class="subtitle dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="material-symbols:subtitles" size="26" />
               <span class="text-lg ml-2">
@@ -305,72 +266,34 @@ const HandleOpenSearchVideo = () => {
                 </n-button>
               </div>
             </header>
-            <article
-              class="mt-8 opacity-80 text-center flex items-center justify-center"
-            >
-              <span
-                class="font-black text-lg"
-                :style="{ color: globalSettings.color }"
-              >
+            <article class="mt-8 opacity-80 text-center flex items-center justify-center">
+              <span class="font-black text-lg" :style="{ color: globalSettings.color }">
                 Subtitle here
               </span>
             </article>
           </section>
         </section>
         <section class="col-span-2">
-          <header
-            class="col-span-5 flex justify-end gap-4 mb-5"
-            v-if="video.finalVideoUrl"
-          >
-            <n-button
-              type="tertiary"
-              dashed
-              size="large"
-              @click="HandleGenerateVideo"
-              >Regenerate</n-button
-            >
-            <n-button
-              type="success"
-              dashed
-              size="large"
-              @click="HandleAddAudio"
-              :disabled="!video.selectedAudio"
-            >
+          <header class="col-span-5 flex justify-end gap-4 mb-5" v-if="video.finalVideoUrl">
+            <n-button type="tertiary" dashed size="large" @click="HandleGenerateVideo">Regenerate</n-button>
+            <n-button type="success" dashed size="large" @click="HandleAddAudio" :disabled="!video.selectedAudio">
               Add Music
             </n-button>
-            <n-button
-              type="default"
-              dashed
-              size="large"
-              @click="HandleClearAndGoToVideos"
-            >
+            <n-button type="default" dashed size="large" @click="HandleClearAndGoToVideos">
               Videos
             </n-button>
           </header>
           <section class="grid place-content-center">
-            <div
-              class="phone bg-slate-700 bg-opacity-10 p-1 rounded-3xl shadow"
-            >
-              <section
-                v-if="!video.finalVideoUrl"
-                class="aspect-[9/16] max-w-sm rounded-3xl w-full h-[750px] px-10 grid place-content-center"
-              >
-                <n-button
-                  round
-                  type="success"
-                  size="large"
-                  @click="HandleGenerateVideo"
-                >
+            <div class="phone bg-slate-700 bg-opacity-10 p-1 rounded-3xl shadow">
+              <section v-if="!video.finalVideoUrl"
+                class="aspect-[9/16] max-w-sm rounded-3xl w-full h-[750px] px-10 grid place-content-center">
+                <n-button round type="success" size="large" @click="HandleGenerateVideo">
                   <span class="text-lg px-10"> Generate </span>
                 </n-button>
               </section>
               <!-- Video placeholder -->
-              <video
-                v-else
-                class="aspect-[9/16] max-w-sm rounded-3xl"
-                :src="`http://localhost:8080/${video.finalVideoUrl}`"
-                controls
-              ></video>
+              <video v-else class="aspect-[9/16] max-w-sm rounded-3xl"
+                :src="`http://localhost:8080/${video.finalVideoUrl}`" controls></video>
             </div>
           </section>
         </section>
@@ -382,31 +305,17 @@ const HandleOpenSearchVideo = () => {
     </template>
   </n-spin>
 
-  <n-modal
-    v-model:show="settingsModalState"
-    :mask-closable="false"
-    closable
-    @close="settingsModal = 'IDLE'"
-    preset="card"
-    class="max-w-3xl"
-    :content-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
-    :header-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
-  >
+  <n-modal v-model:show="settingsModalState" :mask-closable="false" closable @close="settingsModal = 'IDLE'"
+    preset="card" class="max-w-3xl" :content-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
+    :header-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'">
     <div class="p-10" v-if="settingsModal !== 'IDLE'">
       <GenerateScript :active-tab="settingsModal" />
     </div>
   </n-modal>
 
-  <n-modal
-    v-model:show="SearchModal"
-    :mask-closable="false"
-    closable
-    @close="SearchModal = false"
-    preset="card"
-    class="max-w-3xl"
-    :content-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
-    :header-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
-  >
+  <n-modal v-model:show="SearchModal" :mask-closable="false" closable @close="SearchModal = false" preset="card"
+    class="max-w-3xl" :content-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
+    :header-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'">
     <div class="p-10">
       <n-tabs type="line" animated>
         <n-tab-pane name="VIDEO_SEARCH" tab="Search and select" active>
@@ -414,6 +323,13 @@ const HandleOpenSearchVideo = () => {
         </n-tab-pane>
         <n-tab-pane name="VIDEO_SELECTED" tab="Selected Videos">
           <VideoSelected />
+        </n-tab-pane>
+        <n-tab-pane name="VIDEO_INSTAGRAM" tab="Download from Instagram">
+          <Instagram />
+        </n-tab-pane>
+
+        <n-tab-pane name="VIDEO_INSTAGRAM_SELECTED" tab="Instagram">
+          <InstagramVideos />
         </n-tab-pane>
       </n-tabs>
     </div>

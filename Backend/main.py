@@ -3,7 +3,11 @@ from utils import *
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv("../.env")
+# check if .env is in the folder or look one more level up
+if os.path.exists(".env"):
+    load_dotenv(".env")
+else:
+    load_dotenv("../.env")
 # Check if all required environment variables are set
 # This must happen before importing video which uses API keys without checking
 check_env_vars()
@@ -20,8 +24,7 @@ from youtube import upload_video
 from apiclient.errors import HttpError
 from flask import Flask, request, jsonify
 from moviepy.config import change_settings
-
-
+from classes.instagram_downloader import InstagramDownloader
 
 # Set environment variables
 SESSION_ID = os.getenv("TIKTOK_SESSION_ID")
@@ -30,7 +33,7 @@ change_settings({"IMAGEMAGICK_BINARY": os.getenv("IMAGEMAGICK_BINARY")})
 
 
 # Initialize Flask
-app = Flask(__name__, static_folder="../static", static_url_path="/static")
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app)
 
 # Constants
@@ -41,18 +44,54 @@ GENERATING = False
 
 # Create a method to create all the required folders
 def create_folders():
-    # Create static folder if it doesn't exist
-    if not os.path.exists("../static"):
-        os.makedirs("../static")
-    # Create static/Songs and static/generated_videos folder if it doesn't exist
-    if not os.path.exists("../static/assets"):
-        os.makedirs("../static/assets")
-    if not os.path.exists("../static/generated_videos"):
-        os.makedirs("../static/generated_videos") 
-
+    """Create all required folders for the application"""
+    folders = [
+        "static",
+        "static/assets",
+        "static/assets/temp",
+        "static/assets/subtitles",
+        "static/generated_videos",
+        "static/generated_videos/instagram",
+    ]
+    
+    for folder in folders:
+        folder_path = os.path.join(os.path.dirname(__file__), folder)
+        os.makedirs(folder_path, exist_ok=True)
+        print(f"Created/verified folder: {folder_path}")
 
 # Create folders
 create_folders()
+
+# Instagram video download endpoint
+@app.route("/api/instagram/download", methods=["POST"])
+def download_instagram_video():
+    try:
+        data = request.get_json()
+        video_url = data.get('url')
+        
+        if not video_url:
+            return jsonify({
+                "status": "error",
+                "message": "No Instagram URL provided",
+            }), 400
+
+        # Initialize downloader with output path in static/assets
+        downloader = InstagramDownloader(output_path=os.path.join(os.path.dirname(__file__), "static/generated_videos/instagram"))
+        
+        # Download the video
+        result = downloader.download_video(video_url)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Video downloaded successfully",
+            "data": result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
 
 
 # Generation Endpoint
@@ -64,8 +103,8 @@ def generate():
         GENERATING = True
 
         # Clean
-        clean_dir("../static/assets/temp/")
-        clean_dir("../static/assets/subtitles/")
+        clean_dir("static/assets/temp/")
+        clean_dir("static/assets/subtitles/")
 
 
         # Parse JSON
@@ -209,7 +248,7 @@ def generate_script_only():
     # Set generating to true
     GENERATING = True
 
-    clean_dir("../static/assets/subtitles/")
+    clean_dir("static/assets/subtitles/")
     print(colored("[+] Received script request...", "green"))
 
     data = request.get_json()
@@ -245,8 +284,8 @@ def search_and_download():
     global GENERATING
     GENERATING = True 
      # Clean
-    clean_dir("../static/assets/temp")
-    clean_dir("../static/assets/subtitles")
+    clean_dir("static/assets/temp")
+    clean_dir("static/assets/subtitles")
 
     
     print(colored("[+] Received search and download request...", "green"))
@@ -280,6 +319,7 @@ def search_and_download():
 
     videoClass.CombineVideos()
 
+    # videoClass.GenerateMetadata()
     videoClass.Stop()
 
 
@@ -337,7 +377,7 @@ def addAudio():
 # Get all available songs
 @app.route("/api/getSongs", methods=["GET"])
 def get_songs():
-    songs = os.listdir("../static/assets/music")
+    songs = os.listdir(os.path.join(os.path.dirname(__file__), "static/assets/music"))
     return jsonify({
         "status": "success",
         "message": "Songs retrieved successfully!",
@@ -350,14 +390,17 @@ def get_songs():
 @app.route("/api/getVideos", methods=["GET"])
 def get_videos():
     # Get all videos mp4 only
-    videos = os.listdir("../static/generated_videos")
+    videos = os.listdir(os.path.join(os.path.dirname(__file__), "static/generated_videos"))
     videos = [video for video in videos if video.endswith(".mp4")]
+    instagramVideos = os.listdir(os.path.join(os.path.dirname(__file__), "static/generated_videos/instagram"))
+    instagramVideos = [video for video in instagramVideos if video.endswith(".mp4")]
     return jsonify(
         {
         "status": "success",
         "message": "Videos retrieved successfully!",
         "data": {
-            "videos": videos
+            "videos": videos,
+            "instagram": instagramVideos
             }
         }
     )
@@ -365,7 +408,7 @@ def get_videos():
 # Get all available subtitles
 @app.route("/api/getSubtitles", methods=["GET"])
 def get_subtitles():
-    subtitles = os.listdir("../static/assets/subtitles")
+    subtitles = os.listdir(os.path.join(os.path.dirname(__file__), "static/assets/subtitles"))
     return jsonify(
         {
         "status": "success",
@@ -393,8 +436,9 @@ def get_models():
 
 @app.route("/api/assets", methods=["GET"])
 def get_assets():
-    video_assets = os.listdir("../static/assets/temp")
-    videos = [video for video in videos if video.endswith(".mp4")]
+    assets_path = os.path.join(os.path.dirname(__file__), "static/assets/temp")
+    video_assets = os.listdir(assets_path)
+    videos = [video for video in video_assets if video.endswith(".mp4")]
     return jsonify(
         {
         "status": "success",

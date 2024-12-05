@@ -5,17 +5,22 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - ${API_PORT}:8080
+      - ${API_PORT:-8080}:8080
+    environment:
+      - PEXELS_API_KEY=${PEXELS_API_KEY}
+      - TIKTOK_SESSION_ID=${TIKTOK_SESSION_ID}
+      - IMAGEMAGICK_BINARY=${IMAGEMAGICK_BINARY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ASSEMBLY_AI_API_KEY=${ASSEMBLY_AI_API_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
     env_file:
       - .env
     volumes:
-      - .:/home/app
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.FE
-    ports:
-      - ${FE_PORT}:3000
+      - ./Backend:/home/app/Backend
+    restart: unless-stopped
+
   nuxt:
     build:
       context: .

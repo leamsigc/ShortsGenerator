@@ -1,4 +1,4 @@
-g4f
+g4f==0.3.8.3
 setuptools==69.2.0
 wheel==0.38.4
 requests==2.31.0
@@ -19,3 +19,4 @@ oauth2client
 openai
 google-generativeai
 curl_cffi
+yt-dlp

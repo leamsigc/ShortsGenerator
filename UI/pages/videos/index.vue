@@ -37,10 +37,7 @@ videos.value = data.videos;
           <td>{{ video }}</td>
           <td>{{ video }}-name</td>
           <td>
-            <a
-              :href="`http://localhost:8080/static/generated_videos/${video}`"
-              target="_blank"
-            >
+            <a :href="`http://localhost:8080/static/generated_videos/${video}`" target="_blank">
               Open
             </a>
           </td>

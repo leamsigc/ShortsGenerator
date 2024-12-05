@@ -50,9 +50,9 @@ def fetch_songs(zip_url: str) -> None:
     try:
         logger.info(colored(f" => Fetching songs...", "magenta"))
 
-        files_dir = "../Songs"
+        files_dir = os.path.join("static", "assets", "music")
         if not os.path.exists(files_dir):
-            os.mkdir(files_dir)
+            os.makedirs(files_dir)
             logger.info(colored(f"Created directory: {files_dir}", "green"))
         else:
             # Skip if songs are already downloaded
@@ -62,22 +62,22 @@ def fetch_songs(zip_url: str) -> None:
         response = requests.get(zip_url)
 
         # Save the zip file
-        with open("../Songs/songs.zip", "wb") as file:
+        with open(os.path.join(files_dir, "songs.zip"), "wb") as file:
             file.write(response.content)
 
         # Unzip the file
-        with zipfile.ZipFile("../Songs/songs.zip", "r") as file:
-            file.extractall("../Songs")
+        with zipfile.ZipFile(os.path.join(files_dir, "songs.zip"), "r") as file:
+            file.extractall(files_dir)
 
         # Remove the zip file
-        os.remove("../Songs/songs.zip")
+        os.remove(os.path.join(files_dir, "songs.zip"))
 
-        logger.info(colored(" => Downloaded Songs to ../Songs.", "green"))
+        logger.info(colored(" => Downloaded Songs to static/assets/music.", "green"))
 
     except Exception as e:
         logger.error(colored(f"Error occurred while fetching songs: {str(e)}", "red"))
 
-def choose_random_song() -> str:
+def get_random_song() -> str:
     """
     Chooses a random song from the songs/ directory.
 
@@ -85,10 +85,10 @@ def choose_random_song() -> str:
         str: The path to the chosen song.
     """
     try:
-        songs = os.listdir("../static/assets/music")
+        songs = os.listdir(os.path.join("static", "assets", "music"))
         song = random.choice(songs)
         logger.info(colored(f"Chose song: {song}", "green"))
-        return f"../static/assets/music/{song}"
+        return os.path.join("static", "assets", "music", song)
     except Exception as e:
         logger.error(colored(f"Error occurred while choosing random song: {str(e)}", "red"))
 
@@ -115,4 +115,3 @@ def check_env_vars() -> None:
     except Exception as e:
         logger.error(f"Error occurred while checking environment variables: {str(e)}")
         sys.exit(1)  # Aborts the program if an unexpected error occurs
-

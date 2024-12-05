@@ -2,7 +2,7 @@
 
 
 fontSettings = {
-    "font": "../static/assets/fonts/bold_font.ttf",
+    "font": "static/assets/fonts/bold_font.ttf",
     "fontsize": 100,
     "color": "#FFFF00",
     "stroke_color": "black",

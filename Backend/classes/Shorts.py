@@ -236,6 +236,7 @@ class Shorts:
                 )
             try:
                 saved_video_path = save_video(video_url)
+                print(colored(f"[+] Saved video: {saved_video_path}", "green"))
                 video_paths.append(saved_video_path)
             except Exception:
                 print(colored(f"[-] Could not download video: {video_url}", "red"))
@@ -277,19 +278,19 @@ class Shorts:
                     }
                 )
             fileId = uuid4()
-            current_tts_path = f"../static/assets/temp/{fileId}.mp3"
+            current_tts_path = os.path.join("static/assets/temp", f"{fileId}.mp3")
             tts(sentence, self.voice, filename=current_tts_path)
 
             # Add the audio clip to the list
             print(colored(f"[X] Save Audio ", "green"))
-            audio_clip = AudioFileClip(f"../static/assets/temp/{fileId}.mp3")
+            audio_clip = AudioFileClip(os.path.join("static/assets/temp", f"{fileId}.mp3"))
             paths.append(audio_clip)
 
         # Combine all TTS files using moviepy
 
         print(colored(f"[X] Start saving the audio ", "green"))
         final_audio = concatenate_audioclips(paths)
-        self.tts_path = f"../static/assets/temp/{uuid4()}.mp3"
+        self.tts_path = os.path.join("static/assets/temp", f"{uuid4()}.mp3")
         final_audio.write_audiofile(self.tts_path)
 
         # Generate the subtitles
@@ -321,17 +322,17 @@ class Shorts:
             # Remplace spaces with underscores
             fileName = video_title.replace(" ", "_")
 
-            with open(f"../../static/assets/temp/{fileName}.json", "w") as file:
+            with open(os.path.join("static/generated_videos", f"{fileName}.json"), "w") as file:
                 json.dump(metadata, file) 
 
     def AddMusic(self, use_music,custom_song_path=""):
-        video_clip = VideoFileClip(f"../{self.final_video_path}")
+        video_clip = VideoFileClip(f"{self.final_video_path}")
 
         self.final_music_video_path = f"{uuid4()}-music.mp4"
         n_threads = 2
         if use_music:
             # if no song path choose random song
-            song_path = f"../static/assets/music/{custom_song_path}"
+            song_path = os.path.join("static/assets/music", custom_song_path)
             if not custom_song_path:
                 song_path = choose_random_song()
             
@@ -350,9 +351,9 @@ class Shorts:
             video_clip = video_clip.set_fps(30)
             video_clip = video_clip.set_duration(original_duration)
 
-            video_clip.write_videofile(f"../static/generated_videos/{self.final_music_video_path}", threads=n_threads or 1)
+            video_clip.write_videofile(os.path.join("static/generated_videos", self.final_music_video_path), threads=n_threads or 1)
         else:
-            video_clip.write_videofile(f"../static/generated_videos/{self.final_music_video_path}", threads=n_threads or 1)
+            video_clip.write_videofile(os.path.join("static/generated_videos", self.final_music_video_path), threads=n_threads or 1)
 
     def Stop(self):
         global GENERATING
