@@ -37,8 +37,6 @@ COPY Backend/ Backend/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Create necessary directories
-RUN mkdir -p Backend/static/assets/{temp,subtitles,music,fonts} Backend/static/generated_videos
 
 WORKDIR /home/app/Backend
 # copy the .env file

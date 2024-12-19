@@ -10,7 +10,7 @@
  * @todo [ ] Integration test.
  * @todo [✔] Update the typescript.
  */
-
+import { useFullscreen } from '@vueuse/core'
 import type { ScrollbarInst } from "naive-ui";
 import { isWindows } from "~/utils/PlatformUtils";
 import type {
@@ -254,74 +254,33 @@ onMounted(() => {
 
 <template>
   <NModal v-model:show="isDialogVisible" class="search-dialog">
-    <NCard
-      class="w-[650px]"
-      content-style="padding: 0;"
-      :bordered="false"
-      size="huge"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        class="search-dialog-action-bar rounded-2xl"
-        @keydown.up="movePrevItem()"
-        @keydown.down="moveNextItem()"
-      >
+    <NCard class="w-[650px]" content-style="padding: 0;" :bordered="false" size="huge" role="dialog" aria-modal="true">
+      <div class="search-dialog-action-bar rounded-2xl" @keydown.up="movePrevItem()" @keydown.down="moveNextItem()">
         <div class="search-input flex items-center gap-5 px-5 h-12">
           <Icon :name="SearchIcon" size="16" />
-          <input
-            v-model="search"
-            :placeholder="t('searchDialog.searchPlaceholder')"
-            class="grow bg-transparent outline-none border-none"
-          />
+          <input v-model="search" :placeholder="t('searchDialog.searchPlaceholder')"
+            class="grow bg-transparent outline-none border-none" />
           <NText code> ESC </NText>
-          <Icon
-            :name="CloseIcon"
-            size="20"
-            class="cursor-pointer"
-            @click="closeDialog()"
-          />
+          <Icon :name="CloseIcon" size="20" class="cursor-pointer" @click="closeDialog()" />
         </div>
         <NDivider />
         <NScrollbar ref="scrollContent" style="height: 400px">
           <div class="content-wrap">
-            <div
-              v-for="group of filteredGroups"
-              :key="group.name"
-              class="group"
-            >
+            <div v-for="group of filteredGroups" :key="group.name" class="group">
               <div class="group-title">
                 {{ group.name }}
               </div>
               <NEl class="group-list">
-                <div
-                  v-for="item of group.items"
-                  :id="item.key.toString()"
-                  :key="item.key"
-                  class="item flex items-center my-2"
-                  :class="{ active: item.key === activeItem }"
-                  @click="executeAction(item.action)"
-                >
+                <div v-for="item of group.items" :id="item.key.toString()" :key="item.key"
+                  class="item flex items-center my-2" :class="{ active: item.key === activeItem }"
+                  @click="executeAction(item.action)">
                   <NEl class="icon">
-                    <NAvatar
-                      v-if="item.iconImage"
-                      round
-                      :size="28"
-                      :src="item.iconImage"
-                    />
-                    <Icon
-                      v-if="item.iconName"
-                      :name="item.iconName"
-                      size="18"
-                    />
+                    <NAvatar v-if="item.iconImage" round :size="28" :src="item.iconImage" />
+                    <Icon v-if="item.iconName" :name="item.iconName" size="18" />
                   </NEl>
                   <div class="title grow">
-                    <Highlighter
-                      highlight-class-name="highlight"
-                      :search-words="keywords"
-                      :auto-escape="true"
-                      :text-to-highlight="item.title"
-                    />
+                    <Highlighter highlight-class-name="highlight" :search-words="keywords" :auto-escape="true"
+                      :text-to-highlight="item.title" />
                   </div>
                   <div class="label">
                     {{ item.label }}
@@ -362,31 +321,32 @@ onMounted(() => {
 .search-dialog .search-dialog-action-bar .search-input .ca-text--code {
   white-space: nowrap;
 }
+
 .search-dialog .search-dialog-action-bar .ca-divider {
   margin-top: 0;
   margin-bottom: 0;
 }
+
 .search-dialog .search-dialog-action-bar .content-wrap {
   padding-bottom: 30px;
 }
+
 .search-dialog .search-dialog-action-bar .content-wrap .group-empty {
   text-align: center;
   padding: 30px 0 40px 0;
 }
+
 .search-dialog .search-dialog-action-bar .content-wrap .group {
   padding: 0 10px;
 }
+
 .search-dialog .search-dialog-action-bar .content-wrap .group .group-title {
   opacity: 0.6;
   margin-bottom: 5px;
   padding: 20px 10px 5px;
 }
-.search-dialog
-  .search-dialog-action-bar
-  .content-wrap
-  .group
-  .group-list
-  .item {
+
+.search-dialog .search-dialog-action-bar .content-wrap .group .group-list .item {
   padding: 7px 10px;
   gap: 10px;
   cursor: pointer;
@@ -394,13 +354,8 @@ onMounted(() => {
   width: 100%;
   text-align: left;
 }
-.search-dialog
-  .search-dialog-action-bar
-  .content-wrap
-  .group
-  .group-list
-  .item
-  .icon {
+
+.search-dialog .search-dialog-action-bar .content-wrap .group .group-list .item .icon {
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -409,39 +364,21 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
 }
-.search-dialog
-  .search-dialog-action-bar
-  .content-wrap
-  .group
-  .group-list
-  .item
-  .title {
+
+.search-dialog .search-dialog-action-bar .content-wrap .group .group-list .item .title {
   font-weight: bold;
 }
-.search-dialog
-  .search-dialog-action-bar
-  .content-wrap
-  .group
-  .group-list
-  .item
-  .label {
+
+.search-dialog .search-dialog-action-bar .content-wrap .group .group-list .item .label {
   opacity: 0.8;
   font-size: 0.9em;
 }
-.search-dialog
-  .search-dialog-action-bar
-  .content-wrap
-  .group
-  .group-list
-  .item.active {
+
+.search-dialog .search-dialog-action-bar .content-wrap .group .group-list .item.active {
   background-color: var(--hover-color);
 }
-.search-dialog
-  .search-dialog-action-bar
-  .content-wrap
-  .group
-  .group-list
-  .item:hover {
+
+.search-dialog .search-dialog-action-bar .content-wrap .group .group-list .item:hover {
   box-shadow: 0 0 0 1px var(--primary-color-hover) inset;
 }
 </style>

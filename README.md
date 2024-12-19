@@ -1,7 +1,36 @@
 ## ShortsGenerator
 ![ShortGenerator](/logo.jpeg)
+### How to run locally 🚀 Docker is required
+---
+
+2. Clone the repository
+
+```sh
+git clone git@github.com:leamsigc/ShortsGenerator.git video Generator
+
+```
+
+
+
+3. Go to the folder:"
+
+```sh
+cd videoGenerator
+
+```
+
+4. Copy the `.env-example`  to `.env`
+5. Update the Pexel API key if you want to use Video from Pexel
+6. The TikTok key is not needed anymore
+7. `docker compose up -d `
+8. Go to 'http://localhost:5000/generate' to start generating videos
+9. Click on the Setting  `...` to get images and videos to use in the video
+---
+
 
 Automate the creation of YouTube Shorts locally with a couple of simple steps.
+
+
 
 1. Give a video subject
     1. Add extra prompt information if needed

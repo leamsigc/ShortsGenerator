@@ -1,3 +1,6 @@
+import { useStorage } from '@vueuse/core'
+
+
 export interface VideoResultFormat {
   url: string;
   image: string;
@@ -10,7 +13,7 @@ export interface VideoResultFormat {
 }
 
 export const useVideoSettings = () => {
-  const video = useLocalStorage<{
+  const video = useStorage<{
     script: string;
     voice: string;
     videoSubject: string;

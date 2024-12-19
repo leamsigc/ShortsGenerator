@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { useFullscreen } from '@vueuse/core'
 /**
  *
  * Component Description:Desc
@@ -29,11 +30,8 @@ const { toggle: toggleFullScreen } = useFullscreen();
         <SearchTrigger />
         <div class="flex items-center justify-center">
           <NSpace>
-            <ActionIcon
-              :tooltip-text="t('layouts.header.toggleFullScreen')"
-              icon="i-tabler-maximize"
-              @click="toggleFullScreen"
-            />
+            <ActionIcon :tooltip-text="t('layouts.header.toggleFullScreen')" icon="i-tabler-maximize"
+              @click="toggleFullScreen" />
             <NaiveColorModeSwitch size="large" class="pt-1" />
           </NSpace>
         </div>

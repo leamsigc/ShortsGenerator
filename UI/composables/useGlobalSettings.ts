@@ -1,14 +1,16 @@
+import { useStorage } from "@vueuse/core";
+
 
 export const useApiSettings = () => {
-    const API_SETTINGS = useLocalStorage("API_SETTINGS", {
-        URL:"http://localhost:8080",
+    const API_SETTINGS = useStorage("API_SETTINGS", {
+        URL: "http://localhost:8080",
     })
     return {
         API_SETTINGS
     }
 }
 export const useGlobalSettings = () => {
-    const globalSettings = useLocalStorage("globalSettings", {
+    const globalSettings = useStorage("globalSettings", {
         font: "Roboto",
         color: "#000",
         subtitles_position: "center,bottom",

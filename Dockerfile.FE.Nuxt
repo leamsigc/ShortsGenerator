@@ -15,13 +15,13 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
 # Copy package files first for better caching
-COPY ./UI/package.json ./UI/pnpm-lock.yaml ./
+COPY ./UI/package.json ./
 
 # Set npm registry and install dependencies
 RUN npm config set registry https://registry.npmjs.org/
 
 # Install dependencies with pnpm
-RUN pnpm install --frozen-lockfile
+RUN pnpm i
 
 # Copy the rest of the application
 COPY ./UI .

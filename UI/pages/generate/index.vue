@@ -22,7 +22,6 @@ const API_URL = "http://localhost:8080";
 
 const { globalSettings } = useGlobalSettings();
 const { video } = useVideoSettings();
-console.log(video.value);
 
 const showModal = ref(!video.value.script);
 const extraPrompt = ref(false);
@@ -56,9 +55,9 @@ const HandleGenerateScript = async () => {
 };
 // State management
 const loaderStates = reactive({
-  isProcessing: false,
-  isSavingOrder: false,
-  sendingMails: false,
+  isGeneratingVideo: false,
+  isCombiningVideos: false,
+  isAddingSubtitles: false,
 });
 const uiState = reactive({
   isSimpleLoading: false,
@@ -73,22 +72,22 @@ const uiState = reactive({
 // Async loading steps configuration
 const asyncLoadingSteps = computed<Step[]>(() => [
   {
-    text: "Checking Payment",
-    async: loaderStates.isProcessing,
-    afterText: "Payment Verified",
+    text: "Generating Voice",
+    async: loaderStates.isGeneratingVideo,
+    afterText: "Voice Generated",
   },
   {
-    text: "Saving Order",
-    async: loaderStates.isSavingOrder,
-    afterText: "Order Saved",
+    text: "Combining Audio and Video",
+    async: loaderStates.isCombiningVideos,
+    afterText: "Video Generated",
   },
   {
-    text: "Sending Confirmation Email",
-    async: loaderStates.sendingMails,
-    afterText: "Email Sent",
+    text: "Adding subtitle",
+    async: loaderStates.isAddingSubtitles,
+    afterText: "Subtitle Added",
   },
   {
-    text: "Redirecting",
+    text: "Saving final video",
     duration: 1000,
     action: handleAsyncLoadingComplete,
   },
@@ -103,19 +102,9 @@ const HandleGenerateVideo = async () => {
 
     // Reset states
     uiState.isAfterTextLoading = true;
-    loaderStates.isProcessing = true;
-    loaderStates.isSavingOrder = true;
-    loaderStates.sendingMails = true;
-
-    // Simulate async operations
-    function simulateAsyncStep(stateProp: keyof typeof loaderStates, delay: number) {
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          loaderStates[stateProp] = false;
-          resolve();
-        }, delay);
-      });
-    }
+    loaderStates.isGeneratingVideo = true;
+    loaderStates.isCombiningVideos = true;
+    loaderStates.isAddingSubtitles = true;
 
 
 
@@ -139,9 +128,15 @@ const HandleGenerateVideo = async () => {
     });
     video.value.finalVideoUrl = data.finalVideo;
     currentState.value = "script";
+
   } catch (error) {
     console.log({ error });
     currentState.value = "Error";
+  } finally {
+    loaderStates.isGeneratingVideo = false;
+    loaderStates.isCombiningVideos = false;
+    loaderStates.isAddingSubtitles = false;
+    uiState.isAfterTextLoading = false;
   }
 };
 
@@ -178,8 +173,7 @@ const HandleAddAudio = async () => {
     currentState.value = "script";
   }
 };
-
-const HandleClearAndGoToVideos = () => {
+const HandleClear = () => {
   video.value = {
     finalVideoUrl: "",
     selectedAudio: "",
@@ -193,6 +187,10 @@ const HandleClearAndGoToVideos = () => {
   };
   settingsModal.value = "IDLE";
   showModal.value = true;
+}
+
+const HandleClearAndGoToVideos = () => {
+  HandleClear();
   router.push("/videos");
 };
 
@@ -355,6 +353,8 @@ function handleStateChange(state: number) {
         <section class="col-span-2">
           <header class="col-span-5 flex justify-end gap-4 mb-5" v-if="video.finalVideoUrl">
             <n-button type="tertiary" dashed size="large" @click="HandleGenerateVideo">Regenerate</n-button>
+            <n-button type="tertiary" dashed size="large" @click="HandleClear">Clear</n-button>
+
             <n-button type="success" dashed size="large" @click="HandleAddAudio" :disabled="!video.selectedAudio">
               Add Music
             </n-button>
