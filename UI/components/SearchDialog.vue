@@ -10,7 +10,7 @@
  * @todo [ ] Integration test.
  * @todo [✔] Update the typescript.
  */
-import { useFullscreen } from '@vueuse/core'
+import { useFullscreen, useMagicKeys, whenever } from '@vueuse/core'
 import type { ScrollbarInst } from "naive-ui";
 import { isWindows } from "~/utils/PlatformUtils";
 import type {
@@ -301,7 +301,7 @@ onMounted(() => {
             </NEl>
             <span class="opacity-70">{{
               t("searchDialog.toSelectTooltip")
-            }}</span>
+              }}</span>
           </div>
           <div class="flex items-center space-x-1">
             <NEl class="w-4 h-4 bg-[var(--code-color)] rounded flex-center">
@@ -309,7 +309,7 @@ onMounted(() => {
             </NEl>
             <span class="opacity-70">{{
               t("searchDialog.toNavigateTooltip")
-            }}</span>
+              }}</span>
           </div>
         </NEl>
       </div>
