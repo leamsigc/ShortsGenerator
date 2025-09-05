@@ -18,10 +18,10 @@ RUN apt-get update && apt-get install -y locales && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-ENV LC_ALL C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 # Modify ImageMagick policy to allow text operations
-RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml 
+RUN sed -i 's/none/read,write/g' /etc/ImageMagick-7/policy.xml || sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml 
 
 # Set environment variables
 # ENV IMAGEMAGICK_BINARY=/usr/bin/convert

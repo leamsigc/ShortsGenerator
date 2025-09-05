@@ -2,6 +2,7 @@
 export default defineNuxtConfig({
   ssr: false,
   devtools: { enabled: true },
+
   modules: [
     "@bg-dev/nuxt-naiveui",
     "@vueuse/nuxt",
@@ -13,17 +14,21 @@ export default defineNuxtConfig({
     "@nuxtjs/i18n",
     "nuxt-lodash",
   ],
+
   css: ["~/assets/scss/main.scss"],
+
   tailwindcss: {
     exposeConfig: {
       write: true,
     },
   },
+
   content: {
     markdown: {
       anchorLinks: false,
     },
   },
+
   i18n: {
     locales: [
       {
@@ -35,9 +40,12 @@ export default defineNuxtConfig({
     langDir: "locales",
     defaultLocale: "en",
   },
+
   runtimeConfig: {
     public: {
       pexelsApiKey: process.env.PEXELS_API_KEY,
     },
   },
+
+  compatibilityDate: "2025-02-10",
 });

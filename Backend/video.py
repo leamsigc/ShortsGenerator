@@ -20,9 +20,16 @@ load_dotenv("../.env")
 
 ASSEMBLY_AI_API_KEY = os.getenv("ASSEMBLY_AI_API_KEY")
 
+# Add these constants at the top of the file
+ASPECT_RATIOS = {
+    "9:16": (1080, 1920),  # Reels, TikTok, Stories
+    "16:9": (1920, 1080),  # Landscape YouTube
+    "1:1": (1080, 1080),   # Square Instagram
+    "4:5": (1080, 1350),   # Instagram Portrait
+}
 
 
-def save_video(video_url: str, directory: str = "static/assets/temp") -> str:
+def save_video(video_url: str, directory: str = None) -> str:
     """
     Downloads a video from the given URL and saves it to a specified directory.
 
@@ -33,6 +40,8 @@ def save_video(video_url: str, directory: str = "static/assets/temp") -> str:
     Returns:
         str: The path to the saved video.
     """
+    if directory is None:
+        directory = os.path.join(STATIC_DIR, "assets/temp")
     # Ensure the directory exists
     os.makedirs(directory, exist_ok=True)
 
@@ -147,7 +156,7 @@ def generate_subtitles(audio_path: str, sentences: List[str], audio_clips: List[
         srt_equalizer.equalize_srt_file(srt_path, srt_path, max_chars)
 
     # Save subtitles
-    subtitles_path = os.path.join("static/assets/subtitles", f"{uuid.uuid4()}.srt")
+    subtitles_path = os.path.join(STATIC_DIR, "assets/subtitles", f"{uuid.uuid4()}.srt")
 
     if ASSEMBLY_AI_API_KEY is not None and ASSEMBLY_AI_API_KEY != "":
         print(colored("[+] Creating subtitles using AssemblyAI", "blue"))
@@ -170,111 +179,116 @@ def generate_subtitles(audio_path: str, sentences: List[str], audio_clips: List[
 def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration: int, threads: int) -> str:
     """
     Combines a list of videos into one video and returns the path to the combined video.
-
-    Args:
-        video_paths (List): A list of paths to the videos to combine.
-        max_duration (int): The maximum duration of the combined video.
-        max_clip_duration (int): The maximum duration of each clip.
-        threads (int): The number of threads to use for the video processing.
-
-    Returns:
-        str: The path to the combined video.
     """
     video_id = uuid.uuid4()
-    combined_video_path = os.path.join("static/assets/temp", f"{video_id}-combined.mp4")
+    combined_video_path = os.path.join(STATIC_DIR, "assets/temp", f"{video_id}-combined.mp4")
     
-    # Required duration of each clip
-    req_dur = max_duration / len(video_paths)
-
-    print(colored("[+] Combining videos...", "blue"))
-    print(colored(f"[+] Each clip will be maximum {req_dur} seconds long.", "blue"))
-
+    # Get settings
+    settings = get_settings()
+    aspect_ratio = settings["fontSettings"]["aspect_ratio"]
+    target_width, target_height = ASPECT_RATIOS.get(aspect_ratio, (1080, 1920))
+    
     clips = []
     tot_dur = 0
-    # Add downloaded clips over and over until the duration of the audio (max_duration) has been reached
+    
     while tot_dur < max_duration:
         for video_path in video_paths:
-
-            print(f"Video path: {video_path}")
             clip = VideoFileClip(video_path)
-            # if there is no clip go to the next one
             if clip is None:
                 continue
 
             clip = clip.without_audio()
-            # Check if clip is longer than the remaining audio
+            
+            # Apply duration limits
             if (max_duration - tot_dur) < clip.duration:
                 clip = clip.subclip(0, (max_duration - tot_dur))
-            # Only shorten clips if the calculated clip length (req_dur) is shorter than the actual clip to prevent still image
-            elif req_dur < clip.duration:
-                clip = clip.subclip(0, req_dur)
-            # clip = clip.set_fps(30)
-
-            # Not all videos are same size,
-            # so we need to resize them
-            if round((clip.w/clip.h), 4) < 0.5625:
-                clip = crop(clip, width=clip.w, height=round(clip.w/0.5625), \
-                            x_center=clip.w / 2, \
-                            y_center=clip.h / 2)
-            else:
-                clip = crop(clip, width=round(0.5625*clip.h), height=clip.h, \
-                            x_center=clip.w / 2, \
-                            y_center=clip.h / 2)
-            clip = clip.resize((1080, 1920))
-
-            if clip.duration > max_clip_duration:
+            elif max_clip_duration < clip.duration:
                 clip = clip.subclip(0, max_clip_duration)
+
+            # Calculate crop dimensions based on target aspect ratio
+            target_ratio = target_width / target_height
+            current_ratio = clip.w / clip.h
+
+            if current_ratio > target_ratio:
+                # Video is wider than target
+                new_w = int(clip.h * target_ratio)
+                clip = crop(clip, width=new_w, height=clip.h,
+                          x_center=clip.w/2, y_center=clip.h/2)
+            else:
+                # Video is taller than target
+                new_h = int(clip.w / target_ratio)
+                clip = crop(clip, width=clip.w, height=new_h,
+                          x_center=clip.w/2, y_center=clip.h/2)
+
+            # Resize to target dimensions
+            clip = clip.resize((target_width, target_height))
 
             clips.append(clip)
             tot_dur += clip.duration
 
-    print(colored("[+] Videos combined.", "green"))
-    # Debug what is in clips
-    print(clips)
     final_clip = concatenate_videoclips(clips)
     final_clip = final_clip.set_fps(30)
-    print(colored("[+] Set clip.", "green"))
-    final_clip.write_videofile(combined_video_path, threads=3)
+    final_clip.write_videofile(combined_video_path, threads=threads)
 
-    print(colored("[+] Final video created.", "green"))
     return combined_video_path
 
 
 def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str, threads: int, subtitles_position: str) -> str:
     """
-    This function creates the final video, with subtitles and audio.
-
-    Args:
-        combined_video_path (str): The path to the combined video.
-        tts_path (str): The path to the text-to-speech audio.
-        subtitles_path (str): The path to the subtitles.
-        threads (int): The number of threads to use for the video processing.
-        subtitles_position (str): The position of the subtitles.
-
-    Returns:
-        str: The path to the final video.
+    Creates the final video with subtitles and audio.
     """
-
-    # PRINT STATE
     print(colored("[+] Starting video generation...", "green"))
 
     # Get the Settings
-    globalSettings = get_settings()
-    # Make a generator that returns a TextClip when called with consecutive
+    settings = get_settings()
+    font_settings = settings["fontSettings"]
+
+    # Define default font path
+    default_font = os.path.join(STATIC_DIR, "assets/fonts/bold_font.ttf")
+    
+    # Handle Google Font if specified
+    font_path = font_settings.get("font", default_font)
+    
+    if font_settings.get("google_font"):
+        try:
+            font_path = download_google_font(font_settings["google_font"])
+        except Exception as e:
+            print(colored(f"[!] Error downloading Google Font: {e}", "yellow"))
+            print(colored("[!] Using default font instead", "yellow"))
+            font_path = default_font
+    
+    # Ensure we have a valid font path
+    if not font_path or not os.path.exists(font_path):
+        print(colored("[!] Font path not found, using default font", "yellow"))
+        font_path = default_font
+
+    # Final check to ensure font exists
+    if not os.path.exists(font_path):
+        raise ValueError(f"Font file not found at: {font_path}")
+
+    # Create text generator with all styling options
     generator = lambda txt: TextClip(
         txt,
-        font=globalSettings["fontSettings"]["font"],
-        fontsize=globalSettings["fontSettings"]["fontsize"],
-        color=globalSettings["fontSettings"]["color"],
-        stroke_color=globalSettings["fontSettings"]["stroke_color"],
-        stroke_width=globalSettings["fontSettings"]["stroke_width"],
+        font=font_path,
+        fontsize=font_settings.get("fontsize", 100),
+        color=font_settings.get("color", "#FFFFFF"),
+        stroke_color=font_settings.get("stroke_color", "black"),
+        stroke_width=font_settings.get("stroke_width", 5),
+        bg_color=font_settings.get("background_color", "transparent") 
+            if font_settings.get("background_opacity", 0) > 0 else None,
+        size=(ASPECT_RATIOS[font_settings.get("aspect_ratio", "9:16")][0] - 
+              2*font_settings.get("padding", 20), None),
+        method='caption',
+        align=font_settings.get("text_align", "center"),
+        interline=font_settings.get("line_spacing", 1.5),
+        kerning=0
     )
 
     # Split the subtitles position into horizontal and vertical
-    horizontal_subtitles_position, vertical_subtitles_position = globalSettings["fontSettings"]["subtitles_position"].split(",")
+    horizontal_subtitles_position, vertical_subtitles_position = font_settings["subtitles_position"].split(",")
 
     # if subtitle position is not the same as the setting and is not empty we override
-    if subtitles_position != globalSettings["fontSettings"]["subtitles_position"] and subtitles_position != "":
+    if subtitles_position != font_settings["subtitles_position"] and subtitles_position != "":
         horizontal_subtitles_position, vertical_subtitles_position = subtitles_position.split(",")
         
     # Burn the subtitles into the video
@@ -291,8 +305,11 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
     result = result.set_audio(audio)
     print(colored("[+] Audio Done...", "green"))
 
-    video_name = os.path.join("static/generated_videos", f"{uuid4()}-final.mp4")
+    video_name = os.path.join(STATIC_DIR, "generated_videos", f"{uuid4()}.mp4")
     print(colored("[+] Writing video...", "green"))
-    result.write_videofile(f"{video_name}", threads=2)
-
+    result.write_videofile(f"{video_name}", threads=threads)
+    # Remove the Backend directory from the video_name to return static/generated_videos/...
+    backend_dir = os.path.dirname(STATIC_DIR) + os.sep
+    video_name = video_name.replace(backend_dir, "")
+    print(colored(f"[+] Video name {video_name}...", "green"))
     return video_name

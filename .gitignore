@@ -3,6 +3,7 @@ __pycache__
 temp/*
 sounds/*
 output/*
+*/static/generated_videos/*.txt
 images/*
 *.zip
 *.srt

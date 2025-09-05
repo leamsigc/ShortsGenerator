@@ -19,4 +19,5 @@ oauth2client
 openai
 google-generativeai
 curl_cffi
-yt-dlp
+ yt-dlp
+playwright==1.40.0

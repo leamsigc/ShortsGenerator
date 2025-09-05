@@ -44,6 +44,48 @@ Automate the creation of YouTube Shorts locally with a couple of simple steps.
 
 7. ***Profit!***
 
+## Facebook Upload Setup
+
+To use the Facebook upload feature, you need to configure your Firefox profile:
+
+### 1. Find Your Firefox Profile Path
+
+Run the helper script to find your Firefox profiles:
+
+```bash
+cd Backend
+python find_firefox_profile.py
+```
+
+This will show you all available Firefox profiles on your system.
+
+### 2. Configure Environment Variables
+
+Add the following to your `.env` file:
+
+```env
+# Firefox profile path (use the path from step 1)
+FIREFOX_PROFILE_PATH=/home/user/.mozilla/firefox/abc123.default-release
+
+# Run Firefox in headless mode (optional, default: false)
+FIREFOX_HEADLESS=false
+```
+
+### 3. First Time Setup
+
+1. Make sure Firefox is installed and you've logged into Facebook at least once
+2. Run the profile finder script to get the correct path
+3. Add the path to your `.env` file
+4. Restart the application
+
+### 4. Usage
+
+- Go to the Videos page
+- Select videos to upload
+- Click "Upload to Facebook" button
+- The system will open Firefox and navigate to Facebook Creator Studio
+- If not logged in, you'll need to log in manually the first time
+- Subsequent uploads will use your saved session
 
 ## Overview
 

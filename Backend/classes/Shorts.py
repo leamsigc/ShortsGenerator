@@ -1,4 +1,6 @@
 import os
+import multiprocessing
+from typing import Optional
 from utils import *
 
 from settings import *
@@ -9,6 +11,7 @@ from flask import jsonify,json
 from video import *
 from tiktokvoice import *
 from uuid import uuid4
+from main import PROGRESS
 from apiclient.errors import HttpError
 from moviepy.config import change_settings
 
@@ -26,7 +29,7 @@ class Shorts:
     7. Combine Videos with the Text-to-Speech [DONE]
     7. Combine Videos with the Text-to-Speech [DONE]
     """
-    def __init__(self,video_subject: str, paragraph_number: int, ai_model: str,customPrompt: str="", extra_prompt: str = ""):
+    def __init__(self,video_subject: str, paragraph_number: int, ai_model: str,customPrompt: str="", extra_prompt: str = "", threads: Optional[int] = None):
         """
         Constructor for YouTube Class.
 
@@ -36,6 +39,7 @@ class Shorts:
             ai_model (str): The AI model to use for generation.
             customPrompt (str): The custom prompt to use for generation.
             extra_prompt (str): The extra prompt to use for generation.
+            threads (int): Number of threads to use for video processing. If None, uses CPU count.
 
         Returns:
             None
@@ -53,6 +57,12 @@ class Shorts:
         self.customPrompt = customPrompt
         self.extra_prompt = extra_prompt
         self.globalSettings = get_settings()
+
+        # Set threads based on CPU cores if not provided
+        if threads is None or threads <= 0:
+            self.threads = max(1, multiprocessing.cpu_count() - 1)  # Use CPU count - 1 to leave one core for system
+        else:
+            self.threads = int(threads)
 
 
         # Generate a script
@@ -199,8 +209,12 @@ class Shorts:
                             "data": [],
                         }
                     )
+                api_key = os.getenv("PEXELS_API_KEY")
+                if not api_key:
+                    print(colored("[-] PEXELS_API_KEY not set", "red"))
+                    continue
                 found_urls = search_for_stock_videos(
-                    search_term, os.getenv("PEXELS_API_KEY"), self.videos_quantity_search, self.min_duration_search
+                    search_term, api_key, self.videos_quantity_search, self.min_duration_search
                 )
                 # check if found_urls is empty
                 # Check for duplicates
@@ -278,19 +292,19 @@ class Shorts:
                     }
                 )
             fileId = uuid4()
-            current_tts_path = os.path.join("static/assets/temp", f"{fileId}.mp3")
+            current_tts_path = os.path.join(STATIC_DIR, "assets/temp", f"{fileId}.mp3")
             tts(sentence, self.voice, filename=current_tts_path)
 
             # Add the audio clip to the list
             print(colored(f"[X] Save Audio ", "green"))
-            audio_clip = AudioFileClip(os.path.join("static/assets/temp", f"{fileId}.mp3"))
+            audio_clip = AudioFileClip(os.path.join(STATIC_DIR, "assets/temp", f"{fileId}.mp3"))
             paths.append(audio_clip)
 
         # Combine all TTS files using moviepy
 
         print(colored(f"[X] Start saving the audio ", "green"))
         final_audio = concatenate_audioclips(paths)
-        self.tts_path = os.path.join("static/assets/temp", f"{uuid4()}.mp3")
+        self.tts_path = os.path.join(STATIC_DIR, "assets/temp", f"{uuid4()}.mp3")
         final_audio.write_audiofile(self.tts_path)
 
         # Generate the subtitles
@@ -302,40 +316,58 @@ class Shorts:
 
     def CombineVideos(self):
         temp_audio = AudioFileClip(self.tts_path)
-        n_threads = 2
-        combined_video_path = combine_videos(self.video_paths, temp_audio.duration, 10, n_threads or 2)
+        combined_video_path = combine_videos(self.video_paths, temp_audio.duration, 10, self.threads)
 
         print(colored(f"[-] Next step: {combined_video_path}", "green"))
         # Put everything together
-        try:
-            self.final_video_path = generate_video(combined_video_path, self.tts_path, self.subtitles_path, n_threads or 2, self.subtitles_position)
-        except Exception as e:
-            print(colored(f"[-] Error generating final video: {e}", "red"))
+        if self.tts_path and self.subtitles_path:
+            try:
+                self.final_video_path = generate_video(combined_video_path, self.tts_path, self.subtitles_path, self.threads, self.subtitles_position)
+            except Exception as e:
+                print(colored(f"[-] Error generating final video: {e}", "red"))
+                self.final_video_path = None
+        else:
+            print(colored("[-] TTS or subtitles path is None, cannot generate final video", "red"))
             self.final_video_path = None
 
-    def WriteMetadataToFile(video_title, video_description, video_tags):
-            metadata = {
-                "title": video_title,
-                "description": video_description,
-                "tags": video_tags
-            }
-            # Remplace spaces with underscores
-            fileName = video_title.replace(" ", "_")
+    def WriteMetadataToFile(self, video_title, video_description, video_tags, other=None):
+        # Create a metadata string
+        metadata = (
+            f"title: {video_title}\n"
+            f"description: {video_description}\n"
+            f"tags: {video_tags}\n"
+            f"other: {other}\n"
+        )
 
-            with open(os.path.join("static/generated_videos", f"{fileName}.json"), "w") as file:
-                json.dump(metadata, file) 
+        # Define the directory to save files and ensure it exists
+        output_dir = os.path.join(STATIC_DIR, "generated_videos")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate a unique filename using uuid4
+        file_name = f"{uuid4()}.txt"
+        file_path = os.path.join(output_dir, file_name)
+
+        # Logging the operation using colored output
+        print(colored("[X] Save Metadata", "green"))
+        print(colored(f"Metadata: {metadata}", "green"))
+
+        # Save metadata string to a text file
+        with open(file_path, "w") as file:
+            file.write(metadata)
+
+        print(colored(f"Metadata saved to: {file_path}", "green"))
+
 
     def AddMusic(self, use_music,custom_song_path=""):
         video_clip = VideoFileClip(f"{self.final_video_path}")
 
         self.final_music_video_path = f"{uuid4()}-music.mp4"
-        n_threads = 2
         if use_music:
             # if no song path choose random song
-            song_path = os.path.join("static/assets/music", custom_song_path)
+            song_path = os.path.join(STATIC_DIR, "assets/music", custom_song_path)
             if not custom_song_path:
-                song_path = choose_random_song()
-            
+                song_path = get_random_song()
+
 
             # Add song to video at 30% volume using moviepy
             original_duration = video_clip.duration
@@ -351,9 +383,13 @@ class Shorts:
             video_clip = video_clip.set_fps(30)
             video_clip = video_clip.set_duration(original_duration)
 
-            video_clip.write_videofile(os.path.join("static/generated_videos", self.final_music_video_path), threads=n_threads or 1)
+            PROGRESS = 50
+            video_clip.write_videofile(os.path.join(STATIC_DIR, "generated_videos", self.final_music_video_path), threads=self.threads)
+            PROGRESS = 100
         else:
-            video_clip.write_videofile(os.path.join("static/generated_videos", self.final_music_video_path), threads=n_threads or 1)
+            PROGRESS = 50
+            video_clip.write_videofile(os.path.join(STATIC_DIR, "generated_videos", self.final_music_video_path), threads=self.threads)
+            PROGRESS = 100
 
     def Stop(self):
         global GENERATING

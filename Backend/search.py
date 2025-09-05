@@ -31,7 +31,7 @@ def search_for_stock_videos(query: str, api_key: str, it: int, min_dur: int) -> 
     print(colored(f"Response: {r}", "green"))
 
     # Parse the response
-    response = r
+    response = r.json()
 
     # Parse each video
     raw_urls = []
@@ -58,7 +58,6 @@ def search_for_stock_videos(query: str, api_key: str, it: int, min_dur: int) -> 
                         video_res = video["width"]*video["height"]
                         
             # add the url to the return list if it's not empty
-            print(video["link"])
             print(temp_video_url)
             if temp_video_url != "":
                 video_url.append(temp_video_url)

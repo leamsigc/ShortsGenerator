@@ -29,6 +29,11 @@ const menuOptions: MenuLinkRoute[] = [
     path: "/videos",
   },
   {
+    label: "Upload to Facebook",
+    icon: "mdi:facebook",
+    path: "/facebook",
+  },
+  {
     label: "Documentation",
     icon: "material-symbols:description-rounded",
     path: "/docs",

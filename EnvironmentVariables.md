@@ -16,4 +16,10 @@
 
 * ASSEMBLY_AI_API_KEY: Your unique AssemblyAI API key is required. You can obtain one [here](https://www.assemblyai.com/app/). This field is optional; if left empty, the subtitle will be created based on the generated script. Subtitles can also be created locally.
 
+- FIREFOX_PROFILE_PATH: Path to your Firefox profile directory. If not set, the application will try to find the default Firefox profile automatically. Example: `/home/user/.mozilla/firefox/abc123.default-release`
+
+- FIREFOX_HEADLESS: Set to "true" to run Firefox in headless mode (no visible browser window). Default is "false".
+
+- FIREFOX_CHANNEL: Firefox channel to use. Options: "firefox" (stable), "firefox-beta", "firefox-nightly". Default is "firefox" (stable).
+
 Join the [Discord](https://dsc.gg/fuji-community) for support and updates.
