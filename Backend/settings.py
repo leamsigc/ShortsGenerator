@@ -62,27 +62,45 @@ fontSettings = {
 scriptSettings = {
     "defaultPromptStart":
         """
-            # Role: Video Script Generator
+            # VIRAL SCRIPT GENERATOR - SINGLE PARAGRAPH FORMAT
 
-            ## Goals:
-            Generate a script for a video, depending on the subject of the video.
+            Create ONE CONTINUOUS, HIGHLY ENGAGING PARAGRAPH for a short video that will EXPLODE with virality! Use DRAMATIC EXAGGERATION and EXCITING DELIVERY!
 
-            ## Constrains:
-            1. the script is to be returned as a string with the specified number of paragraphs.
-            2. do not under any circumstance reference this prompt in your response.
-            3. get straight to the point, don't start with unnecessary things like, "welcome to this video".
-            4. you must not include any type of markdown or formatting in the script, never use a title. 
-            5. only return the raw content of the script. 
-            6. do not include "voiceover", "narrator" or similar indicators of what should be spoken at the beginning of each paragraph or line. 
-            7. you must not mention the prompt, or anything about the script itself. also, never talk about the amount of paragraphs or lines. just write the script.
-            8. respond in the same language as the video subject.
-        
+            ## VIRAL STRUCTURE (ALL IN ONE FLOWING PARAGRAPH):
+            1. **SHOCKING HOOK**: Start with something INCREDIBLE! UNBELIEVABLE! MIND-BLOWING!
+            2. **BUILD EXCITEMENT**: Create TENSION! ANTICIPATION! SUSPENSE!
+            3. **DELIVER VALUE**: Share GAME-CHANGING SECRETS! LIFE-CHANGING TIPS!
+            4. **EMOTIONAL CLIMAX**: Build to an EXPLOSIVE PEAK of excitement!
+            5. **POWERFUL CTA**: End with a CALL-TO-ACTION that DEMANDS SHARING!
+
+            ## VIRAL POWER WORDS & DRAMATIC STYLE:
+            - SHOCKING! SECRET! FORBIDDEN! BREAKTHROUGH! UNBELIEVABLE!
+            - Scientists HIDE this! Billionaires USE this! Everyone's DOING this!
+            - You WON'T BELIEVE! This CHANGED MY LIFE! GAME-CHANGING!
+            - Use EXCLAMATION POINTS! DRAMATIC PAUSES! EXCITING RHYTHM!
+
+            ## PERFORMANCE STYLE:
+            - Write as if you're a CHARISMATIC SPEAKER on stage!
+            - Use EXAGGERATION! HYPERBOLE! DRAMATIC EXPRESSIONS!
+            - Add EXCLAMATION POINTS everywhere for emphasis!
+            - Make it SOUND like an exciting presentation!
+
+            IMPORTANT: Write ONE CONTINUOUS PARAGRAPH with all the viral elements flowing together!
+
         """ ,
     "defaultPromptEnd":
         """
-            Get straight to the point, don't start with unnecessary things like, "welcome to this video".
-            YOU MUST NOT INCLUDE ANY TYPE OF MARKDOWN OR FORMATTING IN THE SCRIPT, NEVER USE A TITLE.
-            ONLY RETURN THE RAW CONTENT OF THE SCRIPT. DO NOT INCLUDE "VOICEOVER", "NARRATOR" OR SIMILAR INDICATORS OF WHAT SHOULD BE SPOKEN AT THE BEGINNING OF EACH PARAGRAPH OR LINE. YOU MUST NOT MENTION THE PROMPT, OR ANYTHING ABOUT THE SCRIPT ITSELF. ALSO, NEVER TALK ABOUT THE AMOUNT OF PARAGRAPHS OR LINES. JUST WRITE THE SCRIPT.
+            Now write ONE SINGLE, CONTINUOUS PARAGRAPH that flows like an exciting presentation! Make it DRAMATIC! EXCITING! VIRAL-WORTHY!
+
+            REQUIREMENTS:
+            - ONE PARAGRAPH ONLY (no line breaks between sections)
+            - DRAMATIC EXAGGERATION throughout!
+            - EXCLAMATION POINTS everywhere for emphasis!
+            - EXCITING, CHARISMATIC SPEAKER style!
+            - VIRAL hooks, value bombs, and compelling CTAs!
+            - Flow naturally like one continuous, exciting speech!
+
+            Write the SINGLE PARAGRAPH script now:
         """
 }
 

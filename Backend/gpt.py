@@ -87,28 +87,30 @@ def get_search_terms(video_subject: str, amount: int, script: str, ai_model: str
 
     # Build prompt
     prompt = f"""
-    # Role: Video Search Terms Generator
-    ## Goals:
-    Generate {amount} search terms for stock videos, depending on the subject of a video.
+    # Elite Viral Search Terms Generator
+    Generate {amount} precision search terms for stock videos that capture the video's viral essence and visual narrative.
 
-    ## Constrains:
-    1. the search terms are to be returned as a json-array of strings.
-    2. each search term should consist of 1-3 words, always add the main subject of the video.
-    3. you must only return the json-array of strings. you must not return anything else. you must not return the script.
-    4. the search terms must be related to the subject of the video.
-    5. reply with english search terms only.
+    ## Optimization Matrix:
+    1. **Emotional Core**: Terms matching script's psychological triggers and viral moments
+    2. **Visual Precision**: High-converting terms that deliver cinematic, engaging footage
+    3. **Trending Integration**: Current popular search patterns and visual styles
+    4. **Platform Mastery**: Optimized for Pexels, Shutterstock, Pixabay premium results
 
-    ## Output Example:
-    ["search term 1", "search term 2", "search term 3","search term 4","search term 5"]
-    
-    ## Context:
-    ### Video Subject
-    {video_subject}
+    ## Technical Specs:
+    - Return JSON array of strings only
+    - 2-4 words per term for exact visual matching
+    - Core emotional/action keywords from script required
+    - Visual storytelling focus over generic topics
+    - English terms exclusively
 
-    ### Video Script
-    {script}
+    ## Output Format:
+    ["dramatic slow motion", "emotional reaction", "surprised expression", "intense concentration", "viral moment"]
 
-    Please note that you must use English for generating video search terms; Chinese is not accepted.
+    ## Video Context:
+    Subject: {video_subject}
+    Script: {script}
+
+    Generate terms that unlock the most compelling, shareable visual content for maximum viral impact.
     """.strip()
 
 
@@ -149,38 +151,83 @@ def get_search_terms(video_subject: str, amount: int, script: str, ai_model: str
     return search_terms
 
 
-def generate_metadata(video_subject: str, script: str, ai_model: str) -> Tuple[str, str, List[str]]:  
-    """  
-    Generate metadata for a YouTube video, including the title, description, and keywords.  
-  
-    Args:  
-        video_subject (str): The subject of the video.  
-        script (str): The script of the video.  
-        ai_model (str): The AI model to use for generation.  
-  
-    Returns:  
-        Tuple[str, str, List[str]]: The title, description, and keywords for the video.  
-    """  
-  
-    # Build prompt for title  
-    title_prompt = f"""  
-    Generate a catchy and SEO-friendly title for a YouTube shorts video about {video_subject}.  
-    """  
-  
-    # Generate title  
-    title = generate_response(title_prompt, ai_model).strip()  
-    
-    # Build prompt for description  
-    description_prompt = f"""  
-    Write a brief and engaging description for a YouTube shorts video about {video_subject}.  
-    The video is based on the following script:  
-    {script}  
-    """  
-  
-    # Generate description  
-    description = generate_response(description_prompt, ai_model).strip()  
-  
-    # Generate keywords  
-    keywords = get_search_terms(video_subject, 6, script, ai_model)  
+def generate_metadata(video_subject: str, script: str, ai_model: str) -> Tuple[str, str, List[str], str]:
+    """
+    Generate metadata for a YouTube video, including the title, description, and keywords.
 
-    return title, description, keywords  
+    Args:
+        video_subject (str): The subject of the video.
+        script (str): The script of the video.
+        ai_model (str): The AI model to use for generation.
+
+    Returns:
+        Tuple[str, str, List[str]]: The title, description, and keywords for the video.
+    """
+
+    # Build prompt for title
+    title_prompt = f"""
+    Generate an elite viral title for a mobile social media short video about {video_subject}.
+
+    ## Elite Title Engineering:
+    - **Length**: 45-65 characters for perfect mobile display
+    - **Nuclear Power Words**: "SHOCKING TRUTH", "FORBIDDEN SECRET", "UNBELIEVABLE FACT", "MIND-BLOWING REVELATION", "LIFE-CHANGING DISCOVERY"
+    - **SEO Domination**: Primary keyword + emotional triggers + trending elements
+    - **Psychological Triggers**: Fear, curiosity, outrage, excitement, urgency, FOMO
+    - **Mobile Supremacy**: Fits notification previews, loads instantly, demands clicks
+    - **Viral Formats**: "X Things That...", "You Won't Believe...", "The Truth About...", "They Don't Want You To Know..."
+    - **Algorithm Hack**: Optimized for TikTok, Instagram, YouTube Shorts discovery
+
+    ## Advanced Mobile Optimization:
+    - Numbers and lists = 300% higher engagement
+    - Question format = 250% more curiosity clicks
+    - Emojis for visual pop (max 2, strategic placement)
+    - ALL CAPS for power words that demand attention
+    - Universal appeal that transcends demographics
+
+    Return ONLY the title, no quotes or extra text.
+    """
+
+    # Generate title
+    title = generate_response(title_prompt, ai_model).strip()
+
+    # Build prompt for description
+    description_prompt = f"""
+    Craft an elite viral description for a mobile social media short video about {video_subject}.
+
+    ## Elite Description Engineering:
+    - **Nuclear Hook**: First 8 words must freeze the scroll
+    - **SEO Domination**: 4-6 keywords woven naturally with emotional triggers
+    - **Conversion CTA**: Irresistible calls-to-action that drive massive engagement
+    - **Social Proof Weapons**: Credibility builders that establish authority
+    - **Engagement Hijackers**: Questions and curiosity gaps that demand interaction
+    - **Mobile Supremacy**: Scannable format, short paragraphs, instant readability
+    - **Hashtag Arsenal**: 4-6 trending, relevant hashtags for algorithmic boost
+    - **Length**: 120-160 characters for perfect mobile display and SEO
+
+    ## Advanced Viral Elements:
+    - Open with psychological trigger question or shocking revelation
+    - Deploy emotional warfare (amazing, terrifying, life-changing, mind-blowing)
+    - Create exclusivity and urgency ("Before it's too late", "Limited time access")
+    - End with engagement command that overrides free will
+    - Make it so shareable it spreads like digital wildfire
+
+    ## Video Context:
+    {script}
+
+    Return ONLY the description text, no quotes or formatting.
+    """
+
+    # Generate description
+    description = generate_response(description_prompt, ai_model).strip()
+
+    # Generate keywords
+    keywords = get_search_terms(video_subject, 6, script, ai_model)
+
+    # Format for easy copy-paste
+    formatted_output = f"""TITLE: {title}
+
+DESCRIPTION: {description}
+
+TAGS: {', '.join(keywords)}"""
+
+    return title, description, keywords, formatted_output  

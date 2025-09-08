@@ -22,7 +22,12 @@ export const useVideoSettings = () => {
     aiModel: string;
     finalVideoUrl: string;
     selectedAudio: string;
+    customTtsAudio: File | null;
+    customTtsAudioUrl: string;
     selectedVideoUrls: VideoResultFormat[];
+    // Personalization settings
+    textSettings: Record<string, any>;
+    aspectRatio: string;
   }>('VideoSettings', {
     script: "",
     voice: "en_us_001",
@@ -33,10 +38,16 @@ export const useVideoSettings = () => {
     aiModel: "g4f",
 
     finalVideoUrl: "",
-    //   Audio related 
+    //   Audio related
 
     selectedAudio: "",
+    customTtsAudio: null,
+    customTtsAudioUrl: "",
     selectedVideoUrls: [],
+
+    // Personalization settings
+    textSettings: {},
+    aspectRatio: "9:16",
   });
 
 

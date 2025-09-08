@@ -245,22 +245,71 @@ const HandleGenerateVideo = async () => {
     loaderStates.isSavingFinalVideo = false;
     loaderStates.isAddingMusic = false;
 
+    // Prepare request body
+    const requestBody: any = {
+      script: video.value.script,
+      voice: video.value.customTtsAudio ? null : (video.value.voice || globalSettings.value.voice),
+      search: video.value.search.split(","),
+      aiModel: video.value.aiModel || globalSettings.value.aiModel,
+      selectedVideoUrls: video.value.selectedVideoUrls,
+      automateFacebookUpload: automateFacebookUpload.value,
+      facebookScheduleDate: facebookScheduleDate.value,
+      facebookScheduleTime: facebookScheduleTime.value,
+      useMusic: video.value.selectedAudio || undefined,
+      // Personalization settings
+      textSettings: {
+        font: globalSettings.value.font,
+        fontsize: globalSettings.value.fontsize,
+        google_font: globalSettings.value.google_font,
+        color: globalSettings.value.color,
+        stroke_color: globalSettings.value.stroke_color,
+        stroke_width: globalSettings.value.stroke_width,
+        background_color: globalSettings.value.background_color,
+        background_opacity: globalSettings.value.background_opacity,
+        text_align: globalSettings.value.text_align,
+        line_spacing: globalSettings.value.line_spacing,
+        padding: globalSettings.value.padding,
+        word_wrap: globalSettings.value.word_wrap,
+        max_lines: globalSettings.value.max_lines,
+        shadow_enabled: globalSettings.value.shadow_enabled,
+        shadow_color: globalSettings.value.shadow_color,
+        shadow_offset: globalSettings.value.shadow_offset,
+        subtitles_position: globalSettings.value.subtitles_position,
+      },
+      aspectRatio: globalSettings.value.aspect_ratio,
+    };
+
+    let fetchOptions: any = {
+      method: "POST",
+    };
+
+    // If custom audio is provided, use FormData
+    if (video.value.customTtsAudio) {
+      const formData = new FormData();
+
+      // Add all the regular fields
+      Object.keys(requestBody).forEach(key => {
+        if (requestBody[key] !== undefined && requestBody[key] !== null) {
+          if (Array.isArray(requestBody[key])) {
+            formData.append(key, JSON.stringify(requestBody[key]));
+          } else {
+            formData.append(key, requestBody[key]);
+          }
+        }
+      });
+
+      // Add the custom audio file
+      formData.append('customTtsAudio', video.value.customTtsAudio);
+
+      fetchOptions.body = formData;
+    } else {
+      fetchOptions.headers = { 'Content-Type': 'application/json' };
+      fetchOptions.body = JSON.stringify(requestBody);
+    }
+
     const { data } = await $fetch<{
       data: any;
-    }>(`${API_URL}/api/search-and-download`, {
-      method: "POST",
-      body: {
-        script: video.value.script,
-        voice: video.value.voice || globalSettings.value.voice,
-        search: video.value.search.split(","),
-        aiModel: video.value.aiModel || globalSettings.value.aiModel,
-        selectedVideoUrls: video.value.selectedVideoUrls,
-        automateFacebookUpload: automateFacebookUpload.value,
-        facebookScheduleDate: facebookScheduleDate.value,
-        facebookScheduleTime: facebookScheduleTime.value,
-        useMusic: video.value.selectedAudio || undefined,
-      },
-    });
+    }>(`${API_URL}/api/search-and-download`, fetchOptions);
 
     // Set initial state to wait for backend
     loaderStates.isDownloadingVideos = true;
@@ -322,6 +371,8 @@ const HandleClear = () => {
   video.value = {
     finalVideoUrl: "",
     selectedAudio: "",
+    customTtsAudio: null,
+    customTtsAudioUrl: "",
     script: "",
     search: "",
     voice: "",
@@ -526,9 +577,9 @@ function handleStateChange(state: number) {
         </section>
         <!-- Video -->
         <section class="col-span-2">
+          <n-button type="tertiary" dashed size="large" @click="HandleClear">Clear</n-button>
           <header class="col-span-5 flex justify-end gap-4 mb-5" v-if="video.finalVideoUrl">
             <n-button type="tertiary" dashed size="large" @click="HandleGenerateVideo">Regenerate</n-button>
-            <n-button type="tertiary" dashed size="large" @click="HandleClear">Clear</n-button>
 
             <n-button type="success" dashed size="large" @click="HandleAddAudio" :disabled="!video.selectedAudio">
               Add Music

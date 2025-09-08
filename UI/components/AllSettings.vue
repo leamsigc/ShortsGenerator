@@ -66,9 +66,10 @@ const options = [
         clearable
       />
     </n-form-item>
-    <VoiceSettings />
-    <MusicSettings />
-    <SubtitleSettings />
+     <VoiceSettings />
+     <MusicSettings />
+     <SubtitleSettings />
+     <AspectRatioSettings />
   </section>
 </template>
 <style scoped></style>

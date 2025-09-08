@@ -1,5 +1,7 @@
 import os
 import uuid
+import psutil
+import time
 
 import requests
 import srt_equalizer
@@ -182,23 +184,40 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
     """
     video_id = uuid.uuid4()
     combined_video_path = os.path.join(STATIC_DIR, "assets/temp", f"{video_id}-combined.mp4")
-    
+
     # Get settings
     settings = get_settings()
     aspect_ratio = settings["fontSettings"]["aspect_ratio"]
     target_width, target_height = ASPECT_RATIOS.get(aspect_ratio, (1080, 1920))
-    
+
+    # Resource monitoring
+    memory = psutil.virtual_memory()
+    available_memory_gb = memory.available / (1024**3)
+
+    # Reduce threads if memory is low
+    if available_memory_gb < 2.0:  # Less than 2GB available
+        threads = max(1, threads // 2)
+        print(colored(f"[!] Low memory detected, reducing threads to {threads}", "yellow"))
+
     clips = []
     tot_dur = 0
-    
+    processed_clips = 0
+
     while tot_dur < max_duration:
+        # Periodic resource check
+        if processed_clips > 0 and processed_clips % 5 == 0:
+            memory = psutil.virtual_memory()
+            if memory.percent > 75:  # More than 75% memory usage
+                print(colored("[!] High memory usage during video combination, pausing briefly", "yellow"))
+                time.sleep(1)
+
         for video_path in video_paths:
             clip = VideoFileClip(video_path)
             if clip is None:
                 continue
 
             clip = clip.without_audio()
-            
+
             # Apply duration limits
             if (max_duration - tot_dur) < clip.duration:
                 clip = clip.subclip(0, (max_duration - tot_dur))
@@ -213,21 +232,29 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
                 # Video is wider than target
                 new_w = int(clip.h * target_ratio)
                 clip = crop(clip, width=new_w, height=clip.h,
-                          x_center=clip.w/2, y_center=clip.h/2)
+                           x_center=clip.w/2, y_center=clip.h/2)
             else:
                 # Video is taller than target
                 new_h = int(clip.w / target_ratio)
                 clip = crop(clip, width=clip.w, height=new_h,
-                          x_center=clip.w/2, y_center=clip.h/2)
+                           x_center=clip.w/2, y_center=clip.h/2)
 
             # Resize to target dimensions
             clip = clip.resize((target_width, target_height))
 
             clips.append(clip)
             tot_dur += clip.duration
+            processed_clips += 1
 
     final_clip = concatenate_videoclips(clips)
     final_clip = final_clip.set_fps(30)
+
+    # Final resource check before writing
+    memory = psutil.virtual_memory()
+    if memory.percent > 80:
+        print(colored("[!] Very high memory usage before final write, reducing threads", "red"))
+        threads = max(1, threads // 2)
+
     final_clip.write_videofile(combined_video_path, threads=threads)
 
     return combined_video_path
@@ -266,6 +293,11 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
     if not os.path.exists(font_path):
         raise ValueError(f"Font file not found at: {font_path}")
 
+    # Resource check before creating text clips
+    memory = psutil.virtual_memory()
+    if memory.percent > 80:
+        print(colored("[!] High memory usage before text generation", "yellow"))
+
     # Create text generator with all styling options
     generator = lambda txt: TextClip(
         txt,
@@ -274,9 +306,9 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
         color=font_settings.get("color", "#FFFFFF"),
         stroke_color=font_settings.get("stroke_color", "black"),
         stroke_width=font_settings.get("stroke_width", 5),
-        bg_color=font_settings.get("background_color", "transparent") 
+        bg_color=font_settings.get("background_color", "transparent")
             if font_settings.get("background_opacity", 0) > 0 else None,
-        size=(ASPECT_RATIOS[font_settings.get("aspect_ratio", "9:16")][0] - 
+        size=(ASPECT_RATIOS[font_settings.get("aspect_ratio", "9:16")][0] -
               2*font_settings.get("padding", 20), None),
         method='caption',
         align=font_settings.get("text_align", "center"),
@@ -306,8 +338,23 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
     print(colored("[+] Audio Done...", "green"))
 
     video_name = os.path.join(STATIC_DIR, "generated_videos", f"{uuid4()}.mp4")
-    print(colored("[+] Writing video...", "green"))
+
+    # Final resource check before writing
+    memory = psutil.virtual_memory()
+    cpu_usage = psutil.cpu_percent(interval=1)
+
+    if memory.percent > 85 or cpu_usage > 90:
+        print(colored(f"[!] Critical resource usage detected. Memory: {memory.percent:.1f}%, CPU: {cpu_usage:.1f}%", "red"))
+        threads = max(1, threads // 2)
+        print(colored(f"[!] Reduced threads to {threads} for final write", "yellow"))
+
+    print(colored(f"[+] Writing video with {threads} threads...", "green"))
     result.write_videofile(f"{video_name}", threads=threads)
+
+    # Clean up after writing
+    import gc
+    gc.collect()
+
     # Remove the Backend directory from the video_name to return static/generated_videos/...
     backend_dir = os.path.dirname(STATIC_DIR) + os.sep
     video_name = video_name.replace(backend_dir, "")

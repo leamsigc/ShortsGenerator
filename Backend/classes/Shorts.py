@@ -1,6 +1,10 @@
 import os
+import os
 import multiprocessing
+import psutil
+import threading
 from typing import Optional
+from datetime import datetime
 from utils import *
 
 from settings import *
@@ -9,11 +13,88 @@ from search import *
 from termcolor import colored
 from flask import jsonify,json
 from video import *
-from tiktokvoice import *
+from voice import *
 from uuid import uuid4
 from main import PROGRESS
 from apiclient.errors import HttpError
 from moviepy.config import change_settings
+from moviepy.editor import *
+from moviepy.video.fx.all import crop
+from moviepy.video.tools.subtitles import SubtitlesClip
+
+
+class ResourceManager:
+    """Manages system resources to prevent system freeze during video processing"""
+
+    def __init__(self):
+        self.cpu_count = multiprocessing.cpu_count()
+        self.memory_gb = psutil.virtual_memory().total / (1024**3)
+        self.max_memory_usage = 0.7  # Use max 70% of available memory
+        self.min_free_memory_gb = 1.0  # Keep at least 1GB free
+
+    def get_optimal_threads(self, requested_threads=None):
+        """Calculate optimal number of threads based on system resources"""
+        if requested_threads and requested_threads > 0:
+            # Respect user request but cap it
+            optimal = min(requested_threads, self.cpu_count)
+        else:
+            # Auto-calculate based on system
+            optimal = max(1, self.cpu_count - 2)  # Leave 2 cores for system
+
+        # Further reduce if memory is low
+        available_memory = psutil.virtual_memory().available / (1024**3)
+        if available_memory < self.min_free_memory_gb * 2:
+            optimal = max(1, optimal // 2)  # Use half the threads if memory is low
+
+        return optimal
+
+    def check_memory_usage(self):
+        """Check current memory usage and return if it's safe to continue"""
+        memory = psutil.virtual_memory()
+        memory_usage_percent = memory.percent / 100.0
+
+        if memory_usage_percent > self.max_memory_usage:
+            print(colored(f"[!] High memory usage detected: {memory_usage_percent:.1%}", "yellow"))
+            return False
+
+        available_gb = memory.available / (1024**3)
+        if available_gb < self.min_free_memory_gb:
+            print(colored(f"[!] Low memory available: {available_gb:.1f}GB", "yellow"))
+            return False
+
+        return True
+
+    def get_cpu_usage(self):
+        """Get current CPU usage percentage"""
+        return psutil.cpu_percent(interval=1)
+
+    def should_throttle(self):
+        """Check if processing should be throttled due to high resource usage"""
+        cpu_usage = self.get_cpu_usage()
+        memory_ok = self.check_memory_usage()
+
+        if cpu_usage > 80:
+            print(colored(f"[!] High CPU usage detected: {cpu_usage:.1f}%", "yellow"))
+            return True
+
+        if not memory_ok:
+            return True
+
+        return False
+
+    def cleanup_resources(self):
+        """Clean up resources and force garbage collection"""
+        import gc
+        gc.collect()
+
+        # Try to free up memory by clearing caches if available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+from video import ASPECT_RATIOS
 
 class Shorts:
     """
@@ -58,11 +139,16 @@ class Shorts:
         self.extra_prompt = extra_prompt
         self.globalSettings = get_settings()
 
-        # Set threads based on CPU cores if not provided
+        # Initialize resource manager
+        self.resource_manager = ResourceManager()
+
+        # Set threads based on resource manager recommendations
         if threads is None or threads <= 0:
-            self.threads = max(1, multiprocessing.cpu_count() - 1)  # Use CPU count - 1 to leave one core for system
+            self.threads = self.resource_manager.get_optimal_threads()
         else:
-            self.threads = int(threads)
+            self.threads = self.resource_manager.get_optimal_threads(threads)
+
+        print(colored(f"[+] Using {self.threads} threads for video processing", "green"))
 
 
         # Generate a script
@@ -94,6 +180,10 @@ class Shorts:
         # Subtitle
         self.subtitles_position=""
         self.final_music_video_path=""
+
+        # Personalization settings
+        self.aspect_ratio = "9:16"
+        self.custom_text_settings = {}
 
     @property
     def get_final_video_path(self):
@@ -263,52 +353,80 @@ class Shorts:
 
 
     def GenerateMetadata(self):
-        self.video_title, self.video_description, self.video_tags = generate_metadata(self.video_subject, self.final_script, self.ai_model)
+        self.video_title, self.video_description, self.video_tags, self.formatted_metadata = generate_metadata(self.video_subject, self.final_script, self.ai_model)
 
         # Write the metadata in a json file with the video title as the filename
         self.WriteMetadataToFile(self.video_title, self.video_description, self.video_tags)
+
+        # Create comprehensive JSON metadata file
+        self.CreateVideoMetadataJSON()
         
-    def GenerateVoice(self,voice):
+    def GenerateVoice(self, voice, custom_tts_audio_path=None):
         print(colored(f"[X] Generating voice: {voice} ", "green"))
         global GENERATING
         self.voice = voice
-        self.voice_prefix = self.voice[:2]
+        self.voice_prefix = self.voice[:2] if voice else "en"
 
-        # Split script into sentences
+        # If custom audio is provided, use it directly
+        if custom_tts_audio_path:
+            print(colored(f"[X] Using custom TTS audio: {custom_tts_audio_path}", "green"))
+            self.tts_path = custom_tts_audio_path
+
+            # Generate basic subtitles from custom audio
+            try:
+                sentences = self.final_script.split(". ")
+                sentences = list(filter(lambda x: x != "", sentences))
+                self.subtitles_path = self._generate_basic_subtitles(sentences)
+            except Exception as e:
+                print(colored(f"[-] Error generating subtitles from custom audio: {e}", "red"))
+                self.subtitles_path = None
+            return
+
+        # Generate TTS for the entire script in one shot
+        if not GENERATING:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "Video generation was cancelled.",
+                    "data": [],
+                }
+            )
+
+        fileId = uuid4()
+        self.tts_path = os.path.join(STATIC_DIR, "assets/temp", f"{fileId}.wav")  # Changed to .wav
+        tts(self.final_script, self.voice, filename=self.tts_path)
+
+        # Verify TTS file was created
+        if not self.tts_path or not os.path.exists(self.tts_path) or os.path.getsize(self.tts_path) == 0:
+            print(colored(f"[-] TTS file was not created or is empty: {self.tts_path}", "red"))
+            self.tts_path = None
+            print(colored("[!] Continuing without voice - video will be silent", "yellow"))
+            return
+
+        print(colored(f"[+] TTS file created successfully: {self.tts_path} ({os.path.getsize(self.tts_path)} bytes)", "green"))
+
+        # Split script into sentences for subtitles
         sentences = self.final_script.split(". ")
-
-        # Remove empty strings
         sentences = list(filter(lambda x: x != "", sentences))
-        paths = []
-
-        # Generate TTS for every sentence
-        for sentence in sentences:
-            if not GENERATING:
-                return jsonify(
-                    {
-                        "status": "error",
-                        "message": "Video generation was cancelled.",
-                        "data": [],
-                    }
-                )
-            fileId = uuid4()
-            current_tts_path = os.path.join(STATIC_DIR, "assets/temp", f"{fileId}.mp3")
-            tts(sentence, self.voice, filename=current_tts_path)
-
-            # Add the audio clip to the list
-            print(colored(f"[X] Save Audio ", "green"))
-            audio_clip = AudioFileClip(os.path.join(STATIC_DIR, "assets/temp", f"{fileId}.mp3"))
-            paths.append(audio_clip)
-
-        # Combine all TTS files using moviepy
-
-        print(colored(f"[X] Start saving the audio ", "green"))
-        final_audio = concatenate_audioclips(paths)
-        self.tts_path = os.path.join(STATIC_DIR, "assets/temp", f"{uuid4()}.mp3")
-        final_audio.write_audiofile(self.tts_path)
 
         # Generate the subtitles
         try:
+            # For single-shot TTS, we need to create audio clips for each sentence timing
+            audio_clip = AudioFileClip(self.tts_path)
+            total_duration = audio_clip.duration
+            num_sentences = len(sentences)
+            time_per_sentence = total_duration / num_sentences if num_sentences > 0 else total_duration
+
+            paths = []
+            current_time = 0
+            for i, sentence in enumerate(sentences):
+                start_time = current_time
+                end_time = min(current_time + time_per_sentence, total_duration)
+                # Create a subclips for timing estimation
+                sub_clip = audio_clip.subclip(start_time, end_time)
+                paths.append(sub_clip)
+                current_time = end_time
+
             self.subtitles_path = generate_subtitles(audio_path=self.tts_path, sentences=sentences, audio_clips=paths, voice=self.voice_prefix)
         except Exception as e:
             print(colored(f"[-] Error generating subtitles: {e}", "red"))
@@ -326,9 +444,204 @@ class Shorts:
             except Exception as e:
                 print(colored(f"[-] Error generating final video: {e}", "red"))
                 self.final_video_path = None
+        elif self.subtitles_path:
+            # Generate video without audio if TTS failed
+            print(colored("[!] Generating video without audio (TTS failed)", "yellow"))
+            try:
+                self.final_video_path = generate_video(combined_video_path, None, self.subtitles_path, self.threads, self.subtitles_position)
+            except Exception as e:
+                print(colored(f"[-] Error generating video without audio: {e}", "red"))
+                self.final_video_path = None
         else:
-            print(colored("[-] TTS or subtitles path is None, cannot generate final video", "red"))
+            print(colored("[-] No TTS or subtitles available, cannot generate final video", "red"))
             self.final_video_path = None
+
+    def GenerateVideoOptimized(self):
+        """
+        Optimized method that combines video combination, text overlay, and voice addition in one step
+        """
+        print(colored("[+] Starting optimized video generation...", "green"))
+        global GENERATING
+
+        if not GENERATING:
+            return
+
+        # Check initial resource availability
+        if not self.resource_manager.check_memory_usage():
+            print(colored("[!] Insufficient memory for video generation. Reducing thread count.", "yellow"))
+            self.threads = max(1, self.threads // 2)
+
+        # Set process priority to below normal to be less intrusive
+        try:
+            import os
+            os.nice(10)  # Lower priority (higher nice value = lower priority)
+        except:
+            pass  # Windows doesn't have nice(), skip on Windows
+
+        # Get audio duration for video length calculation
+        temp_audio = AudioFileClip(self.tts_path)
+        max_duration = temp_audio.duration
+
+        # Combine videos in one step with text and audio
+        video_id = uuid4()
+        final_video_path = os.path.join(STATIC_DIR, "generated_videos", f"{video_id}.mp4")
+
+        # Get settings and apply personalization
+        settings = get_settings()
+        font_settings = settings["fontSettings"]
+
+        # Use custom aspect ratio if set, otherwise use default
+        aspect_ratio = self.aspect_ratio if hasattr(self, 'aspect_ratio') and self.aspect_ratio else font_settings["aspect_ratio"]
+        target_width, target_height = ASPECT_RATIOS.get(aspect_ratio, (1080, 1920))
+
+        # Apply custom text settings if available
+        if self.custom_text_settings:
+            print(colored(f"[+] Applying custom text settings to font_settings", "cyan"))
+            print(colored(f"[+] Before update - font_settings fontsize: {font_settings.get('fontsize')}", "cyan"))
+            font_settings.update(self.custom_text_settings)
+            print(colored(f"[+] After update - font_settings fontsize: {font_settings.get('fontsize')}", "cyan"))
+            print(colored(f"[+] After update - font_settings color: {font_settings.get('color')}", "cyan"))
+
+        # Define default font path
+        default_font = os.path.join(STATIC_DIR, "assets/fonts/bold_font.ttf")
+
+        # Handle Google Font if specified
+        font_path = font_settings.get("font", default_font)
+
+        if font_settings.get("google_font"):
+            try:
+                font_path = download_google_font(font_settings["google_font"])
+            except Exception as e:
+                print(colored(f"[!] Error downloading Google Font: {e}", "yellow"))
+                print(colored("[!] Using default font instead", "yellow"))
+                font_path = default_font
+
+        # Ensure we have a valid font path
+        if not font_path or not os.path.exists(font_path):
+            print(colored("[!] Font path not found, using default font", "yellow"))
+            font_path = default_font
+
+        # Create text generator with all styling options
+        generator = lambda txt: TextClip(
+            txt,
+            font=font_path,
+            fontsize=font_settings.get("fontsize", 100),
+            color=font_settings.get("color", "#FFFFFF"),
+            stroke_color=font_settings.get("stroke_color", "black"),
+            stroke_width=font_settings.get("stroke_width", 5),
+            bg_color=font_settings.get("background_color", "transparent")
+                if font_settings.get("background_opacity", 0) > 0 else None,
+            size=(target_width - 2*font_settings.get("padding", 20), None),
+            method='caption',
+            align=font_settings.get("text_align", "center"),
+            interline=font_settings.get("line_spacing", 1.5),
+            kerning=0
+        )
+
+        # Split the subtitles position into horizontal and vertical
+        horizontal_subtitles_position, vertical_subtitles_position = font_settings["subtitles_position"].split(",")
+
+        # if subtitle position is not the same as the setting and is not empty we override
+        if self.subtitles_position != font_settings["subtitles_position"] and self.subtitles_position != "":
+            horizontal_subtitles_position, vertical_subtitles_position = self.subtitles_position.split(",")
+
+        # Prepare video clips with resource monitoring
+        clips = []
+        tot_dur = 0
+        processed_clips = 0
+
+        while tot_dur < max_duration:
+            # Check resources before processing each clip
+            if processed_clips > 0 and processed_clips % 3 == 0:  # Check every 3 clips
+                if self.resource_manager.should_throttle():
+                    print(colored("[!] Throttling due to high resource usage. Taking a break...", "yellow"))
+                    import time
+                    time.sleep(2)  # Brief pause to let system recover
+
+                    # Re-check thread count
+                    optimal_threads = self.resource_manager.get_optimal_threads(self.threads)
+                    if optimal_threads < self.threads:
+                        print(colored(f"[!] Reducing threads from {self.threads} to {optimal_threads}", "yellow"))
+                        self.threads = optimal_threads
+
+                # Clean up resources periodically
+                if processed_clips % 5 == 0:
+                    self.resource_manager.cleanup_resources()
+
+            for video_path in self.video_paths:
+                clip = VideoFileClip(video_path)
+                if clip is None:
+                    continue
+
+                clip = clip.without_audio()
+
+                # Apply duration limits
+                if (max_duration - tot_dur) < clip.duration:
+                    clip = clip.subclip(0, (max_duration - tot_dur))
+                elif 10 < clip.duration:  # max_clip_duration
+                    clip = clip.subclip(0, 10)
+
+                # Calculate crop dimensions based on target aspect ratio
+                target_ratio = target_width / target_height
+                current_ratio = clip.w / clip.h
+
+                if current_ratio > target_ratio:
+                    # Video is wider than target
+                    new_w = int(clip.h * target_ratio)
+                    clip = crop(clip, width=new_w, height=clip.h,
+                               x_center=clip.w/2, y_center=clip.h/2)
+                else:
+                    # Video is taller than target
+                    new_h = int(clip.w / target_ratio)
+                    clip = crop(clip, width=clip.w, height=new_h,
+                               x_center=clip.w/2, y_center=clip.h/2)
+
+                # Resize to target dimensions
+                clip = clip.resize((target_width, target_height))
+
+                clips.append(clip)
+                tot_dur += clip.duration
+                processed_clips += 1
+
+        # Combine video clips
+        combined_clip = concatenate_videoclips(clips)
+        combined_clip = combined_clip.set_fps(30)
+
+        # Add subtitles
+        if self.subtitles_path:
+            subtitles = SubtitlesClip(self.subtitles_path, generator)
+            # Position the subtitles correctly
+            try:
+                positioned_subtitles = subtitles.set_position((horizontal_subtitles_position, vertical_subtitles_position))
+            except AttributeError:
+                # Fallback for different MoviePy versions
+                positioned_subtitles = subtitles
+            combined_clip = CompositeVideoClip([
+                combined_clip,
+                positioned_subtitles
+            ])
+
+        # Add audio
+        combined_clip = combined_clip.set_audio(temp_audio)
+
+        # Write final video with resource monitoring
+        print(colored(f"[+] Writing final video with {self.threads} threads...", "green"))
+
+        # Final resource check before writing
+        if not self.resource_manager.check_memory_usage():
+            print(colored("[!] Low memory before final write. Reducing threads.", "yellow"))
+            self.threads = max(1, self.threads // 2)
+
+        combined_clip.write_videofile(final_video_path, threads=self.threads)
+
+        # Clean up resources after video generation
+        self.resource_manager.cleanup_resources()
+
+        # Remove the Backend directory from the video_name to return static/generated_videos/...
+        backend_dir = os.path.dirname(STATIC_DIR) + os.sep
+        self.final_video_path = final_video_path.replace(backend_dir, "")
+
+        print(colored(f"[+] Optimized video generation completed: {self.final_video_path}", "green"))
 
     def WriteMetadataToFile(self, video_title, video_description, video_tags, other=None):
         # Create a metadata string
@@ -336,6 +649,7 @@ class Shorts:
             f"title: {video_title}\n"
             f"description: {video_description}\n"
             f"tags: {video_tags}\n"
+            f"formatted_metadata: {self.formatted_metadata}\n"
             f"other: {other}\n"
         )
 
@@ -356,6 +670,43 @@ class Shorts:
             file.write(metadata)
 
         print(colored(f"Metadata saved to: {file_path}", "green"))
+
+    def CreateVideoMetadataJSON(self):
+        """Create a comprehensive JSON metadata file for the generated video"""
+
+        # Prepare metadata dictionary
+        video_metadata = {
+            "path": self.final_video_path,
+            "name": os.path.basename(self.final_video_path) if self.final_video_path else "",
+            "title": self.video_title,
+            "script": self.final_script,
+            "type": "short_video",
+            "metadata": {
+                "title": self.video_title,
+                "description": self.video_description,
+                "tags": self.video_tags,
+                "formatted_metadata": self.formatted_metadata
+            },
+            "created_at": datetime.now().isoformat(),
+            "video_subject": self.video_subject,
+            "ai_model": self.ai_model,
+            "search_terms": self.search_terms
+        }
+
+        # Define the directory to save JSON files
+        output_dir = os.path.join(STATIC_DIR, "generated_videos")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate filename based on video name or UUID
+        video_name = os.path.splitext(os.path.basename(self.final_video_path))[0] if self.final_video_path else str(uuid4())
+        json_filename = f"{video_name}_metadata.json"
+        json_path = os.path.join(output_dir, json_filename)
+
+        # Save JSON metadata
+        with open(json_path, "w", encoding="utf-8") as json_file:
+            json.dump(video_metadata, json_file, indent=2, ensure_ascii=False)
+
+        print(colored(f"JSON metadata saved to: {json_path}", "green"))
 
 
     def AddMusic(self, use_music,custom_song_path=""):
@@ -390,6 +741,61 @@ class Shorts:
             PROGRESS = 50
             video_clip.write_videofile(os.path.join(STATIC_DIR, "generated_videos", self.final_music_video_path), threads=self.threads)
             PROGRESS = 100
+
+    def _generate_basic_subtitles(self, sentences):
+        """Generate basic subtitles for custom audio based on script timing estimates"""
+        from moviepy.editor import AudioFileClip
+
+        # Load the audio to get duration
+        audio_clip = AudioFileClip(self.tts_path)
+        total_duration = audio_clip.duration
+
+        # Estimate timing for each sentence
+        num_sentences = len(sentences)
+        if num_sentences == 0:
+            return None
+
+        # Simple equal distribution of time
+        time_per_sentence = total_duration / num_sentences
+
+        subtitles_content = ""
+        current_time = 0
+
+        for i, sentence in enumerate(sentences, 1):
+            start_time = current_time
+            end_time = min(current_time + time_per_sentence, total_duration)
+
+            # Format timestamps
+            start_timestamp = self._format_timestamp(start_time)
+            end_timestamp = self._format_timestamp(end_time)
+
+            subtitles_content += f"{i}\n{start_timestamp} --> {end_timestamp}\n{sentence.strip()}\n\n"
+
+            current_time = end_time
+
+        # Save subtitles file
+        subtitles_path = os.path.join(STATIC_DIR, "assets/subtitles", f"{uuid4()}.srt")
+        with open(subtitles_path, "w") as file:
+            file.write(subtitles_content)
+
+        return subtitles_path
+
+    def _format_timestamp(self, seconds):
+        """Format seconds into SRT timestamp format"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        milliseconds = int((seconds % 1) * 1000)
+
+        return "02d"
+
+    def apply_text_settings(self, text_settings):
+        """
+        Apply custom text settings for video generation
+        """
+        self.custom_text_settings = text_settings
+        print(colored(f"[+] Applied custom text settings: {text_settings}", "green"))
+        print(colored(f"[+] Custom settings keys: {list(text_settings.keys()) if text_settings else 'None'}", "cyan"))
 
     def Stop(self):
         global GENERATING

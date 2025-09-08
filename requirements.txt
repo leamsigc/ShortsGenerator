@@ -20,4 +20,7 @@ openai
 google-generativeai
 curl_cffi
  yt-dlp
-playwright==1.40.0
+ playwright==1.40.0
+ chatterbox-tts
+torch
+torchaudio

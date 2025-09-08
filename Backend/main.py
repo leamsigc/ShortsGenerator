@@ -1,5 +1,5 @@
-import os
 import asyncio
+import os
 import threading
 from utils import *
 from dotenv import load_dotenv
@@ -22,12 +22,12 @@ from video import *
 from search import *
 from classes.Shorts import *
 from uuid import uuid4
-from tiktokvoice import *
+from voice import *
 from flask_cors import CORS
 from termcolor import colored
 from youtube import upload_video
-from apiclient.errors import HttpError
 from flask import Flask, request, jsonify
+import json
 from moviepy.config import change_settings
 from classes.instagram_downloader import InstagramDownloader
 from facebook_upload import FacebookUploader
@@ -145,6 +145,10 @@ def generate():
         facebook_schedule_time = data.get('facebookScheduleTime', '09:00')
         # Get 'background' from the request data and default to False if not provided
         background = data.get('background', False)
+
+        # Get personalization settings
+        text_settings = data.get('textSettings', {})
+        aspect_ratio = data.get('aspectRatio', '9:16')
 
         voice = data.get("voice", "en_us_001")
         voice_prefix = voice[:2]
@@ -463,8 +467,9 @@ def run_generation(data):
         search_terms = data["search"]
         script = data["script"]
         ai_model = data["aiModel"]
-        voice = data["voice"]
+        voice = data.get("voice")
         selectedVideoUrls = data.get("selectedVideoUrls", [])
+        custom_tts_audio_path = data.get("customTtsAudioPath")
 
         # Extra options:
         custom_video = data.get("videoUrls", [])
@@ -478,7 +483,14 @@ def run_generation(data):
         facebook_schedule_date = data.get('facebookScheduleDate', '')
         facebook_schedule_time = data.get('facebookScheduleTime', '09:00')
 
-        if not voice:
+        # Personalization settings
+        text_settings = data.get('textSettings', {})
+        aspect_ratio = data.get('aspectRatio', '9:16')
+
+        print(colored(f"[+] Received text settings: {text_settings}", "cyan"))
+        print(colored(f"[+] Received aspect ratio: {aspect_ratio}", "cyan"))
+
+        if not voice and not custom_tts_audio_path:
             print(colored("[!] No voice was selected. Defaulting to \"en_us_001\"", "yellow"))
             voice = "en_us_001"
 
@@ -488,17 +500,23 @@ def run_generation(data):
         videoClass.final_script = script
         videoClass.subtitles_position = subtitles_position
 
+        # Apply personalization settings
+        if text_settings:
+            videoClass.apply_text_settings(text_settings)
+        if aspect_ratio:
+            videoClass.aspect_ratio = aspect_ratio
+
         generation_status["current_step"] = "Downloading Videos"
         generation_status["progress"] = 20
         videoClass.DownloadVideos(selectedVideoUrls)
 
         generation_status["current_step"] = "Generating Voice"
         generation_status["progress"] = 40
-        videoClass.GenerateVoice(voice)
+        videoClass.GenerateVoice(voice, custom_tts_audio_path)
 
-        generation_status["current_step"] = "Combining Videos"
+        generation_status["current_step"] = "Generating Video (Optimized)"
         generation_status["progress"] = 60
-        videoClass.CombineVideos()
+        videoClass.GenerateVideoOptimized()
 
         generation_status["current_step"] = "Generating Metadata"
         generation_status["progress"] = 80
@@ -596,7 +614,24 @@ def search_and_download():
             "message": "Generation already in progress",
         }), 400
 
-    data = request.get_json()
+    # Check if request has files (FormData) or JSON
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        data = request.form.to_dict()
+        # Handle file uploads
+        custom_tts_file = request.files.get('customTtsAudio')
+        if custom_tts_file:
+            # Save the uploaded file
+            custom_audio_path = os.path.join(STATIC_DIR, "assets/temp", f"custom_tts_{uuid4()}.wav")
+            custom_tts_file.save(custom_audio_path)
+            data['customTtsAudioPath'] = custom_audio_path
+    else:
+        data = request.get_json()
+
+    # Parse JSON strings back to objects
+    if 'search' in data and isinstance(data['search'], str):
+        data['search'] = json.loads(data['search'])
+    if 'selectedVideoUrls' in data and isinstance(data['selectedVideoUrls'], str):
+        data['selectedVideoUrls'] = json.loads(data['selectedVideoUrls'])
 
     # Start generation in background thread
     thread = threading.Thread(target=run_generation, args=(data,))
@@ -652,6 +687,11 @@ def get_videos():
     # Get all videos mp4 only
     videos = os.listdir(os.path.join(STATIC_DIR, "generated_videos"))
     videos = [video for video in videos if video.endswith(".mp4")]
+
+    # Get all files to find metadata
+    all_files = os.listdir(os.path.join(STATIC_DIR, "generated_videos"))
+    metadata_files = [f for f in all_files if f.endswith("_metadata.json")]
+
     instagramVideos = os.listdir(os.path.join(STATIC_DIR, "generated_videos/instagram"))
     instagramVideos = [video for video in instagramVideos if video.endswith(".mp4")]
     return jsonify(
@@ -660,6 +700,7 @@ def get_videos():
         "message": "Videos retrieved successfully!",
         "data": {
             "videos": videos,
+            "metadata": metadata_files,
             "instagram": instagramVideos
             }
         }
