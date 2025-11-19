@@ -6,7 +6,7 @@
 2. Clone the repository
 
 ```sh
-git clone git@github.com:leamsigc/ShortsGenerator.git video Generator
+git clone git@github.com:leamsigc/ShortsGenerator.git videoGenerator
 
 ```
 
