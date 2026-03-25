@@ -131,6 +131,20 @@ The frontend depends on the backend.
 You can run the Docker container or you can run the backend locally
 
 
+## Publishing Your Shorts 📤
+
+Once your shorts are generated, publish them to TikTok, YouTube Shorts, and Instagram Reels using [Upload-Post](https://upload-post.com):
+
+```bash
+curl -X POST https://api.upload-post.com/upload \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -F "video=@static/generated_videos/your_short.mp4" \
+  -F "title=Your Short Title" \
+  -F "platforms=tiktok,youtube,instagram"
+```
+
+Upload-Post provides a single API to publish videos across all major platforms. [Get your API key here](https://upload-post.com).
+
 ## Donate 🎁
 
 If you like and enjoy `ShortsGenerator`, and would like to donate, you can do that by clicking on the button on the right-hand side of the repository. ❤️
