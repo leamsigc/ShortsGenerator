@@ -8,6 +8,7 @@ Automate YouTube Shorts creation locally — script generation, stock video sear
 
 - **AI Script Generation** — uses g4f (free) or Gemini to generate video scripts
 - **Stock Video Search** — auto-downloads matching clips from Pexels
+- **TwelveLabs Clip Selection** *(optional)* — reranks the Pexels candidates with the Pegasus video-understanding model so the most relevant B-roll is used first; enabled by setting `TWELVELABS_API_KEY` ([free tier](https://twelvelabs.io))
 - **Multi-Voice TTS** — Supertonic (local, 10 voices, 33 languages), TikTok TTS (fallback), KittenTTS
 - **Subtitle Templates** — 10 presets (classic, modern_glow, bold_outline, minimal, cinematic, neon, social_viral, floating, news_ticker, karaoke_highlight)
 - **Background Music** — auto-mix from your music library or extract from a video
@@ -134,6 +135,7 @@ Backend/
 ├── settings.py          # Global defaults
 ├── gpt.py               # AI script generation
 ├── search.py            # Pexels stock video search
+├── twelvelabs_select.py # Optional Pegasus clip reranking
 ├── tiktokvoice.py       # TikTok TTS
 ├── classes/
 │   └── Shorts.py        # Core pipeline orchestrator
