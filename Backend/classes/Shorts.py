@@ -223,7 +223,12 @@ class Shorts:
                     "data": [],
                 }
             )
-        
+
+        # Optional: rerank candidate clips with TwelveLabs Pegasus so the most
+        # relevant ones download first. No-op unless TWELVELABS_API_KEY is set.
+        from twelvelabs_select import rerank_clips
+        self.video_urls = rerank_clips(self.video_urls, self.video_subject, self.final_script)
+
         # Download the videos
         video_paths = []
         # Let user know
