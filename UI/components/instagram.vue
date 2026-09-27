@@ -82,13 +82,13 @@ const downloadVideos = async () => {
   <div class="container mx-auto px-4 py-8">
     <h1 class="text-2xl font-bold mb-6">Instagram Video Downloader</h1>
 
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white dark:bg-neutral-800 rounded-lg shadow p-6">
       <form @submit.prevent="downloadVideos" class="space-y-4">
         <!-- URL Inputs -->
         <div v-for="(url, index) in instagramUrls" :key="index" class="flex gap-2">
           <div class="flex-1">
             <input v-model="instagramUrls[index]" type="text" :placeholder="'Enter Instagram URL ' + (index + 1)"
-              class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-clipper-green/20 focus:border-clipper-green"
               required />
           </div>
           <!-- Remove URL button -->

@@ -3,7 +3,7 @@
         enter-to-class="opacity-100" leave-active-class="transition-opacity duration-300" leave-from-class="opacity-100"
         leave-to-class="opacity-0">
         <div v-if="loading && steps.length > 0"
-            class="fixed inset-0 z-[100] flex size-full items-center justify-center backdrop-blur-2xl">
+            class="fixed inset-0 z-[100] flex size-full items-center justify-center bg-black/90">
             <!-- Closing Button -->
             <button v-show="!preventClose"
                 class="absolute right-4 top-4 z-[101] inline-flex h-9 items-center justify-center whitespace-nowrap rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
@@ -79,7 +79,7 @@
                 </div>
             </div>
             <div
-                class="absolute inset-x-0 bottom-0 z-20 h-full bg-white bg-gradient-to-t [mask-image:radial-gradient(900px_at_center,transparent_30%,white)] dark:bg-black">
+                class="absolute inset-x-0 bottom-0 z-20 h-full bg-white dark:bg-neutral-800 bg-gradient-to-t [mask-image:radial-gradient(900px_at_center,transparent_30%,white)] dark:bg-black">
             </div>
         </div>
     </Transition>

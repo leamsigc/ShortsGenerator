@@ -32,6 +32,11 @@ export interface VideoMetadata {
   suggested_schedule?: string;
 }
 
+export interface SoundEffectEntry {
+  path: string;
+  startTime: number;
+}
+
 export const useVideoSettings = () => {
   const defaults = {
     script: "",
@@ -45,11 +50,16 @@ export const useVideoSettings = () => {
     selectedVideoUrls: [] as VideoResultFormat[],
     aspectRatio: "9:16",
     subtitleTemplate: "classic",
+    subtitleFont: "",
     subtitlePosition: "bottom",
     customSubtitle: "",
     videoSegments: [] as VideoSegment[],
     backgroundMusicFromVideo: "",
     musicSource: "library" as const,
+    musicVolume: 0.15,
+    sfxVolume: 0.9,
+    soundEffects: [] as SoundEffectEntry[],
+    scriptLength: "standard" as string,
     scriptTemplate: "viral_shorts",
     useCustomAudio: false,
     customAudioPath: "",
@@ -69,5 +79,5 @@ export const useVideoSettings = () => {
     }
   }
 
-  return { video }
+  return { video, defaults }
 }

@@ -90,6 +90,7 @@ interface TTSSettings {
 }
 
 import { useStorage } from "@vueuse/core";
+import { useClipperStore } from "~/stores/ClipperStore";
 
 interface MagicSyncBusiness {
   id: string
@@ -261,34 +262,87 @@ async function loadTtsStatus() {
   }
 }
 
-const { data: mainSettings } = await $fetch<{
-  data: GlobalSettings;
-}>(`${API_URL}/api/settings`);
+let mainSettings: GlobalSettings | undefined;
+let settingsLoadError: string | null = null;
+try {
+  const res = await $fetch<{ data: GlobalSettings }>(`${API_URL}/api/settings`);
+  mainSettings = res.data;
+} catch (e: any) {
+  settingsLoadError = e?.message || "Backend unreachable";
+  console.error("Failed to load settings (is the backend running on " + API_URL + "?):", e);
+}
 
-globalSettings.value.font = mainSettings.fontSettings.font;
-globalSettings.value.color = mainSettings.fontSettings.color;
-globalSettings.value.fontsize = mainSettings.fontSettings.fontsize;
-globalSettings.value.stroke_color = mainSettings.fontSettings.stroke_color;
-globalSettings.value.stroke_width = mainSettings.fontSettings.stroke_width;
-globalSettings.value.subtitles_position = mainSettings.fontSettings.subtitles_position;
+if (mainSettings?.fontSettings) {
+  globalSettings.value.font = mainSettings.fontSettings.font;
+  globalSettings.value.color = mainSettings.fontSettings.color;
+  globalSettings.value.fontsize = mainSettings.fontSettings.fontsize;
+  globalSettings.value.stroke_color = mainSettings.fontSettings.stroke_color;
+  globalSettings.value.stroke_width = mainSettings.fontSettings.stroke_width;
+  globalSettings.value.subtitles_position = mainSettings.fontSettings.subtitles_position;
+}
 
-const ttsEngine = ref(mainSettings.ttsSettings?.preferred_tts || "supertonic");
-selectedVoice.value = mainSettings.ttsSettings?.tts_voice || "M3";
-selectedLang.value = mainSettings.ttsSettings?.tts_lang || "en";
-selectedQuality.value = mainSettings.ttsSettings?.tts_quality || 8;
-selectedSpeed.value = mainSettings.ttsSettings?.tts_speed || 1.05;
+const ttsEngine = ref(mainSettings?.ttsSettings?.preferred_tts || "supertonic");
+selectedVoice.value = mainSettings?.ttsSettings?.tts_voice || "M3";
+selectedLang.value = mainSettings?.ttsSettings?.tts_lang || "en";
+selectedQuality.value = mainSettings?.ttsSettings?.tts_quality || 8;
+selectedSpeed.value = mainSettings?.ttsSettings?.tts_speed || 1.05;
 
-const aspectRatio = ref(mainSettings.aspectRatioSettings?.current || "9:16");
-const aspectRatioOptions = ref(mainSettings.aspectRatioSettings?.options || []);
-const titleColor = ref(mainSettings.titleColorSettings?.current || "#FFFF00");
-const titleColorOptions = ref(mainSettings.titleColorSettings?.options || []);
-const selectedFont = ref(mainSettings.fontOptions?.current || "bold_font.ttf");
-const fontOptionsList = ref(mainSettings.fontOptions?.options || []);
-const subtitleTemplate = ref(mainSettings.subtitleTemplates?.current || "classic");
-const subtitleTemplateOptions = ref(mainSettings.subtitleTemplates?.options || []);
+const aspectRatio = ref(mainSettings?.aspectRatioSettings?.current || "9:16");
+const aspectRatioOptions = ref(mainSettings?.aspectRatioSettings?.options || []);
+const titleColor = ref(mainSettings?.titleColorSettings?.current || "#FFFF00");
+const titleColorOptions = ref(mainSettings?.titleColorSettings?.options || []);
+const selectedFont = ref(mainSettings?.fontOptions?.current || "bold_font.ttf");
+const fontOptionsList = ref(mainSettings?.fontOptions?.options || []);
+const subtitleTemplate = ref(mainSettings?.subtitleTemplates?.current || "classic");
+const subtitleTemplateOptions = ref(mainSettings?.subtitleTemplates?.options || []);
 
 await loadVoices(ttsEngine.value);
 await loadTtsStatus();
+
+// g4f cookie toggle (same backend setting as Clipper → Settings → AI Model Provider)
+const clipperStore = useClipperStore();
+const g4fUseCookies = ref(true);
+const g4fSaving = ref(false);
+const g4fSaveError = ref("");
+const cookieStatus = ref<{ ok: boolean; reason: string; detail: string; renew_steps: string[] } | null>(null);
+const cookieChecking = ref(false);
+async function checkCookies() {
+  cookieChecking.value = true;
+  try {
+    cookieStatus.value = await clipperStore.fetchG4fCookieStatus();
+  } catch (e) {
+    console.error("Failed to check cookie status:", e);
+  } finally {
+    cookieChecking.value = false;
+  }
+}
+try {
+  const llmData = await clipperStore.fetchLlmSettings();
+  if (llmData) {
+    g4fUseCookies.value = llmData.settings.g4f_use_cookies !== false;
+    if (g4fUseCookies.value) checkCookies();
+  }
+} catch (e) {
+  console.error("Failed to load LLM settings:", e);
+}
+
+async function onG4fCookiesChange(value: boolean) {
+  const previous = g4fUseCookies.value;
+  g4fUseCookies.value = value;
+  g4fSaving.value = true;
+  g4fSaveError.value = "";
+  try {
+    await clipperStore.updateLlmSettings({ g4f_use_cookies: value });
+    if (value) checkCookies();
+    else cookieStatus.value = null;
+  } catch (e: any) {
+    g4fUseCookies.value = previous;
+    g4fSaveError.value = e?.data?.message || e?.message || "Could not save — is the backend running?";
+    console.error("Failed to save cookie setting:", e);
+  } finally {
+    g4fSaving.value = false;
+  }
+}
 
 async function onTtsEngineChange(engine: string) {
   await loadVoices(engine);
@@ -372,12 +426,22 @@ const HandleSaveSettings = async () => {};
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col justify-center items-center p-4">
-    <header class="text-3xl leading-10 font-bold">Global Settings</header>
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-[30px] font-bold leading-tight text-clipper-ink dark:text-white tracking-tight">Global Settings</h1>
+      <p class="text-sm text-clipper-ink/60 dark:text-white/60 mt-1">Configure TTS, fonts, subtitles and integrations</p>
+    </div>
+
+    <div v-if="settingsLoadError" class="max-w-screen-md w-full bg-white dark:bg-neutral-800 border border-clipper-ink/12 dark:border-white/10 rounded-lg p-4">
+      <p class="text-sm font-semibold text-clipper-ink dark:text-white">Backend unreachable ({{ API_URL }})</p>
+      <p class="text-xs text-clipper-ink/60 dark:text-white/60 mt-1">
+        Settings could not be loaded — start the backend (Flask on port 8080), then reload this page. Showing defaults meanwhile.
+      </p>
+    </div>
 
     <n-form
       ref="formRef"
-      class="max-w-screen-md mt-10 w-full"
+      class="max-w-screen-md w-full"
       :model="globalSettings"
       :rules="settingsRule"
       size="large"
@@ -387,9 +451,36 @@ const HandleSaveSettings = async () => {};
         <n-select v-model:value="globalSettings.aiModel" :options="aiModelOptions" class="w-full md:w-auto" />
       </n-form-item>
 
+      <div v-if="globalSettings.aiModel === 'g4f'" class="max-w-screen-md w-full bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-4 rounded-xl mb-4">
+        <n-checkbox
+          :checked="g4fUseCookies"
+          :disabled="g4fSaving"
+          @update:checked="onG4fCookiesChange"
+        >
+          <span class="text-sm font-medium text-clipper-ink dark:text-white">Use browser cookies</span>
+        </n-checkbox>
+        <p class="text-xs text-clipper-ink/60 dark:text-white/60 mt-1 ml-6">
+          g4f reads your Firefox Google cookies for Gemini. Turn OFF to use cookie-free
+          providers instead — no login, no API key. {{ g4fSaving ? "Saving…" : "" }}
+        </p>
+        <div v-if="cookieChecking" class="text-xs text-clipper-ink/60 dark:text-white/60 mt-2 ml-6">Checking browser cookies…</div>
+        <div v-else-if="cookieStatus && !cookieStatus.ok" class="mt-2 ml-6 rounded-lg border border-red-500/40 bg-red-500/10 p-3">
+          <p class="text-xs font-semibold text-red-500">Browser cookies are outdated</p>
+          <p class="text-xs text-clipper-ink/70 dark:text-white/70 mt-1">{{ cookieStatus.detail }}</p>
+          <ol class="text-xs text-clipper-ink/70 dark:text-white/70 list-decimal ml-4 mt-2 space-y-1">
+            <li v-for="(step, i) in cookieStatus.renew_steps" :key="i">{{ step }}</li>
+          </ol>
+          <button class="mt-2 text-xs font-medium underline" @click="checkCookies()">Check again</button>
+        </div>
+        <p v-else-if="cookieStatus && cookieStatus.ok" class="text-xs text-green-600 dark:text-green-400 mt-2 ml-6">
+          Cookies look fresh — {{ cookieStatus.detail }}
+        </p>
+        <p v-if="g4fSaveError" class="text-xs text-red-500 mt-1 ml-6">{{ g4fSaveError }}</p>
+      </div>
+
       <n-divider>TTS Settings</n-divider>
 
-      <div class="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg mb-4">
+      <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-5 rounded-xl mb-4">
         <n-form-item label="TTS Engine:" path="ttsEngine">
           <div class="flex items-center gap-3 w-full">
             <n-select v-model:value="ttsEngine" :options="ttsEngineOptions" class="flex-1" @update:value="onTtsEngineChange" />
@@ -503,7 +594,7 @@ const HandleSaveSettings = async () => {};
 
       <n-divider>Video Settings</n-divider>
 
-      <div class="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-lg mb-4">
+      <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-5 rounded-xl mb-4">
         <n-form-item label="Aspect Ratio:">
           <n-select v-model:value="aspectRatio" :options="aspectRatioOptions.map(o => ({ label: o.label, value: o.value }))" class="w-full" @update:value="saveAspectRatio" />
         </n-form-item>
@@ -511,7 +602,7 @@ const HandleSaveSettings = async () => {};
 
       <n-divider>Subtitle Templates</n-divider>
 
-      <div class="bg-purple-50 dark:bg-purple-900/30 p-4 rounded-lg mb-4">
+      <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-5 rounded-xl mb-4">
         <n-form-item label="Template:">
           <n-select v-model:value="subtitleTemplate" :options="subtitleTemplateOptions.map(t => ({ label: t.label, value: t.value, description: t.description }))" class="w-full" @update:value="saveSubtitleTemplate" />
         </n-form-item>
@@ -522,7 +613,7 @@ const HandleSaveSettings = async () => {};
 
       <n-divider>Title Color & Font</n-divider>
 
-      <div class="bg-green-50 dark:bg-green-900/30 p-4 rounded-lg mb-4">
+      <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-5 rounded-xl mb-4">
         <n-form-item label="Title Color:">
           <div class="flex flex-wrap gap-2">
             <n-button
@@ -543,22 +634,22 @@ const HandleSaveSettings = async () => {};
 
       <n-divider>MagicSync Integration</n-divider>
 
-      <div class="bg-emerald-50 dark:bg-emerald-900/30 p-4 rounded-lg mb-4">
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-5 rounded-xl mb-4">
+        <p class="text-sm text-clipper-ink/60 dark:text-white/60 mb-4">
           Add API keys for each business you want to schedule videos to via MagicSync.
         </p>
 
-        <div v-if="magicsyncBusinesses.length === 0" class="text-sm text-yellow-500 mb-4">
+        <div v-if="magicsyncBusinesses.length === 0" class="text-sm text-clipper-ink/35 dark:text-white/40 border border-dashed border-clipper-ink/12 dark:border-white/10 rounded-lg p-3 mb-4">
           No businesses configured yet. Add one to start scheduling videos.
         </div>
 
-        <div v-for="biz in magicsyncBusinesses" :key="biz.id" class="bg-white dark:bg-slate-800 rounded-lg p-4 mb-3 border border-slate-200 dark:border-slate-700">
+        <div v-for="biz in magicsyncBusinesses" :key="biz.id" class="bg-white dark:bg-neutral-800 rounded-lg p-4 mb-3 border border-clipper-ink/08 dark:border-white/08">
           <div class="flex items-start justify-between mb-3">
             <div class="flex-1 min-w-0">
-              <h4 class="font-semibold text-sm">{{ biz.name }}</h4>
-              <p class="text-xs text-gray-400 truncate">URL: {{ biz.url }}</p>
-              <p class="text-xs text-gray-400 truncate">Base URL: {{ biz.videoBaseUrl }}</p>
-              <p class="text-xs text-gray-400 truncate">Token: {{ biz.apiToken ? '••••••••' : 'Not set' }}</p>
+              <h4 class="font-semibold text-sm text-clipper-ink dark:text-white">{{ biz.name }}</h4>
+              <p class="text-xs text-clipper-ink/60 dark:text-white/60 truncate">URL: {{ biz.url }}</p>
+              <p class="text-xs text-clipper-ink/60 dark:text-white/60 truncate">Base URL: {{ biz.videoBaseUrl }}</p>
+              <p class="text-xs text-clipper-ink/35 dark:text-white/40 truncate">Token: {{ biz.apiToken ? '••••••••' : 'Not set' }}</p>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
               <n-button size="tiny" quaternary @click="openEditBusiness(biz)">
@@ -581,17 +672,17 @@ const HandleSaveSettings = async () => {};
             </n-button>
 
             <div v-if="testResults[biz.id]" class="text-xs">
-              <div v-if="testResults[biz.id].connected" class="text-green-500">
-                ✓ Connected — {{ testResults[biz.id].accounts.length }} account(s)
+              <div v-if="testResults[biz.id].connected" class="text-clipper-ink dark:text-white">
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-clipper-green inline-block"></span> Connected — {{ testResults[biz.id].accounts.length }} account(s)</span>
                 <div v-if="testResults[biz.id].accounts.length > 0" class="mt-1 space-y-0.5">
-                  <div v-for="acc in testResults[biz.id].accounts" :key="acc.platform + acc.accountName" class="flex items-center gap-1">
-                    <Icon name="mdi:check-circle" class="text-green-400 text-xs" />
+                  <div v-for="acc in testResults[biz.id].accounts" :key="acc.platform + acc.accountName" class="flex items-center gap-1 text-clipper-ink/70 dark:text-white/70">
+                    <Icon name="ph:check-circle" class="text-clipper-green text-xs" />
                     <span>{{ acc.platform }} — {{ acc.accountName }}</span>
-                    <n-tag v-if="!acc.isActive" size="tiny" type="warning">inactive</n-tag>
+                    <span v-if="!acc.isActive" class="text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08">inactive</span>
                   </div>
                 </div>
               </div>
-              <div v-else class="text-red-400">{{ testResults[biz.id].error }}</div>
+              <div v-else class="text-clipper-ink/60 dark:text-white/60">{{ testResults[biz.id].error }}</div>
             </div>
           </div>
         </div>
@@ -641,9 +732,9 @@ const HandleSaveSettings = async () => {};
       </n-modal>
 
       <n-form-item>
-        <n-button @click="HandleSaveSettings" type="success" ghost :loading="isLoading" :disabled="isLoading">
+        <button class="h-10 px-4 rounded-lg bg-clipper-green text-clipper-ink font-semibold text-sm hover:opacity-90 disabled:opacity-50" @click="HandleSaveSettings" :disabled="isLoading">
           Save settings
-        </n-button>
+        </button>
       </n-form-item>
     </n-form>
   </div>

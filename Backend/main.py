@@ -33,6 +33,7 @@ from classes.instagram_downloader import InstagramDownloader
 from leadgen.adapters.devtools_adapter import DevToolsAdapter
 from leadgen.enrichment import enrich_campaign_description, enrich_campaign_with_website, enhance_profile_analysis, find_related_niche_queries, suggest_engagement, analyze_competitor, analyze_viral_post, generate_lead_keywords, generate_engagement_keywords, generate_synthetic_leads, qualify_search_results
 from leadgen.campaign_store import create_campaign, get_campaigns, get_campaign, delete_campaign, add_lead, get_leads, add_competitor, remove_competitor, add_viral_post
+from clipper_routes import register_clipper_routes
 
 # Set environment variables
 SESSION_ID = os.getenv("TIKTOK_SESSION_ID")
@@ -46,6 +47,8 @@ CORS(app, origins="*", supports_credentials=True, expose_headers=[
     "Content-Range", "Accept-Ranges", "Content-Length",
     "Cache-Control", "Content-Type", "Content-Disposition"
 ])
+
+register_clipper_routes(app)
 
 # Constants
 HOST = "0.0.0.0"
@@ -64,6 +67,8 @@ def create_folders():
         "static/assets/custom_audio",
         "static/generated_videos",
         "static/generated_videos/instagram",
+        "static/clipper",
+        "static/clipper/projects",
     ]
     
     for folder in folders:
@@ -301,8 +306,9 @@ def generate_script_only():
     extra_prompt = data["extraPrompt"]
     ai_model = data["aiModel"]
     script_template = data.get("scriptTemplate", "")
+    script_length = data.get("scriptLength", "standard")
 
-    videoClass = Shorts(video_subject, 1, ai_model, "", extra_prompt=extra_prompt, script_template=script_template)
+    videoClass = Shorts(video_subject, 1, ai_model, "", extra_prompt=extra_prompt, script_template=script_template, script_length=script_length)
     script = videoClass.GenerateScript()
 
 
@@ -470,6 +476,26 @@ def addAudio():
     music_source = data.get("musicSource", "library")
     background_music_from_video = data.get("backgroundMusicFromVideo", "")
     aspect_ratio = data.get("aspectRatio", "9:16")
+    music_volume = data.get("musicVolume", 0.1)
+    sfx_volume = data.get("sfxVolume", 0.9)
+    sound_effects = data.get("soundEffects", [])
+
+    # Resolve sound effects: accept library names or direct paths
+    sfx_paths = []
+    sfx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "sfx"))
+    for sfx in sound_effects:
+        if isinstance(sfx, str):
+            sfx = {"path": sfx}
+        p = sfx.get("path", "")
+        if not p:
+            continue
+        if not os.path.isabs(p) and not p.startswith("static/"):
+            candidate = os.path.join(sfx_dir, p)
+            p = candidate if os.path.exists(candidate) else p
+        if os.path.exists(p):
+            sfx_paths.append({"path": p, "startTime": sfx.get("startTime", 0)})
+        else:
+            print(colored(f"[-] SFX file not found, skipping: {p}", "yellow"))
 
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     videoClass = Shorts("", 1, ai_model, '')
@@ -513,7 +539,14 @@ def addAudio():
                 }
             ), 400
 
-    videoClass.AddMusic(True, actual_song_path, music_source=music_source if music_source == "video" else "library")
+    videoClass.AddMusic(
+        True,
+        actual_song_path,
+        music_source=music_source if music_source == "video" else "library",
+        music_volume=float(music_volume),
+        sfx_paths=sfx_paths,
+        sfx_volume=float(sfx_volume),
+    )
 
     videoClass.Stop()
     final_music_path = videoClass.get_final_music_video_path
@@ -610,12 +643,33 @@ def download_music_url():
 
         download_id = str(uuid.uuid4())[:8]
         ydl_opts = {
-            "format": "bestvideo+bestaudio/best",
+            # Prefer H.264 (avc1): AV1 downloads fail to decode on platforms
+            # without hardware AV1 support, and everything is re-encoded to
+            # H.264 downstream anyway.
+            "format": (
+                "bestvideo[vcodec^=avc1]+bestaudio/"
+                "best[vcodec^=avc1]/"
+                "best[vcodec!^=av01]/"
+                "best"
+            ),
             "outtmpl": os.path.join(temp_dir, f"{download_id}.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
+            # `android` is the primary bot-gate bypass; `tv`/`tv_embedded` are
+            # cookie-less fallbacks. Override with YTDLP_PLAYER_CLIENT env var.
+            "player_client": [c.strip() for c in os.getenv(
+                "YTDLP_PLAYER_CLIENT", "android,tv,tv_embedded,ios,mweb,android_vr"
+            ).split(",") if c.strip()],
         }
+
+        # Optional cookie auth when the IP is flagged by YouTube's bot-gate
+        cookie_file = os.getenv("YTDLP_COOKIES")
+        if cookie_file and os.path.exists(cookie_file):
+            ydl_opts["cookiefile"] = cookie_file
+        cookie_browser = os.getenv("YTDLP_COOKIES_FROM_BROWSER")
+        if cookie_browser:
+            ydl_opts["cookiesfrombrowser"] = (cookie_browser,)
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -799,7 +853,7 @@ def extract_frame():
 # Get all available songs
 @app.route("/api/getSongs", methods=["GET"])
 def get_songs():
-    songs = os.listdir(os.path.join(os.path.dirname(__file__), "static/assets/music"))
+    songs = [f for f in os.listdir(os.path.join(os.path.dirname(__file__), "static/assets/music")) if not f.startswith(".")]
     return jsonify({
         "status": "success",
         "message": "Songs retrieved successfully!",
@@ -808,56 +862,178 @@ def get_songs():
         }
     })
 
+
+# Get all available sound effects
+@app.route("/api/getSfx", methods=["GET"])
+def get_sfx():
+    sfx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "sfx"))
+    os.makedirs(sfx_dir, exist_ok=True)
+    sfx = [f for f in os.listdir(sfx_dir) if not f.startswith(".")]
+    return jsonify({
+        "status": "success",
+        "message": "Sound effects retrieved successfully!",
+        "data": {
+            "sfx": sfx
+        }
+    })
+
+
+# Upload a sound effect into the library
+@app.route("/api/upload-sfx", methods=["POST"])
+def upload_sfx():
+    sfx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "sfx"))
+    os.makedirs(sfx_dir, exist_ok=True)
+
+    if "file" not in request.files:
+        return jsonify({"status": "error", "message": "No file provided"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"status": "error", "message": "No file selected"}), 400
+
+    allowed_ext = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_ext:
+        return jsonify({"status": "error", "message": f"Unsupported audio format: {ext}. Allowed: {', '.join(allowed_ext)}"}), 400
+
+    filename = secure_filename(file.filename)
+    file.save(os.path.join(sfx_dir, filename))
+    print(colored(f"[+] Uploaded sound effect: {filename}", "green"))
+    return jsonify({"status": "success", "message": f"Uploaded {filename}", "data": {"filename": filename}})
+
+
 # Get all available videos
 @app.route("/api/getVideos", methods=["GET"])
 def get_videos():
     generated_dir = os.path.join(os.path.dirname(__file__), "static/generated_videos")
     videos = [f for f in os.listdir(generated_dir) if f.endswith(".mp4")]
 
-    video_list = []
-    for video in videos:
-        metadata = None
-        meta_path = os.path.join(generated_dir, video.replace(".mp4", ".json"))
+    def _load_metadata(directory, filename):
+        meta_path = os.path.join(directory, filename.replace(".mp4", ".json"))
         if os.path.exists(meta_path):
             try:
                 with open(meta_path) as f:
-                    metadata = json.load(f)
+                    return json.load(f)
             except Exception:
                 pass
+        return None
+
+    video_list = []
+    for video in sorted(videos, key=lambda f: os.path.getmtime(os.path.join(generated_dir, f)), reverse=True):
         video_list.append({
             "filename": video,
             "url": f"/api/video/{video}",
-            "metadata": metadata
+            "metadata": _load_metadata(generated_dir, video)
         })
 
     instagram_dir = os.path.join(generated_dir, "instagram")
     instagram_videos = []
     if os.path.exists(instagram_dir):
-        for f in os.listdir(instagram_dir):
+        for f in sorted(os.listdir(instagram_dir), key=lambda x: os.path.getmtime(os.path.join(instagram_dir, x)), reverse=True):
             if f.endswith(".mp4"):
-                metadata = None
-                meta_path = os.path.join(instagram_dir, f.replace(".mp4", ".json"))
-                if os.path.exists(meta_path):
-                    try:
-                        with open(meta_path) as mf:
-                            metadata = json.load(mf)
-                    except Exception:
-                        pass
                 instagram_videos.append({
                     "filename": f,
                     "url": f"/api/video/instagram/{f}",
-                    "metadata": metadata
+                    "metadata": _load_metadata(instagram_dir, f)
                 })
+
+    # Clipper renders + exports, joined with clip metadata (hook title, thumbnail)
+    clipper_videos = _list_clipper_videos()
+
+    # Downloaded/stock assets (Pexels search-and-download, uploads, etc.)
+    downloads_list = []
+    temp_dir = os.path.join(os.path.dirname(__file__), "static/assets/temp")
+    if os.path.exists(temp_dir):
+        for f in sorted(os.listdir(temp_dir), key=lambda x: os.path.getmtime(os.path.join(temp_dir, x)), reverse=True):
+            if f.endswith(".mp4"):
+                fp = os.path.join(temp_dir, f)
+                downloads_list.append({
+                    "filename": f,
+                    "url": f"/static/assets/temp/{f}",
+                    "metadata": None,
+                    "size_mb": round(os.path.getsize(fp) / (1024 * 1024), 1),
+                })
+
     return jsonify(
         {
         "status": "success",
         "message": "Videos retrieved successfully!",
         "data": {
             "videos": video_list,
-            "instagram": instagram_videos
+            "instagram": instagram_videos,
+            "clipper": clipper_videos,
+            "downloads": downloads_list,
             }
         }
     )
+
+
+def _list_clipper_videos():
+    """List all rendered/exported CLIPPER videos across projects with clip metadata."""
+    try:
+        from classes.ClipperProject import project_store
+    except ImportError:
+        return []
+
+    clipper_root = os.path.join(os.path.dirname(__file__), "static/clipper/projects")
+    if not os.path.exists(clipper_root):
+        return []
+
+    # Build a clip_id -> clip lookup across all projects
+    clip_lookup = {}
+    for project in project_store.list_projects():
+        for clip in project_store.get_clips(project.id):
+            clip_lookup[clip.id] = (clip, project)
+
+    results = []
+    for project_dir in os.listdir(clipper_root):
+        project_path = os.path.join(clipper_root, project_dir)
+        if not os.path.isdir(project_path):
+            continue
+        # renders/
+        renders_dir = os.path.join(project_path, "renders")
+        if os.path.exists(renders_dir):
+            for f in os.listdir(renders_dir):
+                if f.endswith(".mp4"):
+                    results.append(_clipper_video_item(project_dir, "renders", f, clip_lookup))
+        # exports/<format>/
+        exports_dir = os.path.join(project_path, "exports")
+        if os.path.exists(exports_dir):
+            for fmt in os.listdir(exports_dir):
+                fmt_dir = os.path.join(exports_dir, fmt)
+                if not os.path.isdir(fmt_dir):
+                    continue
+                for f in os.listdir(fmt_dir):
+                    if f.endswith(".mp4"):
+                        results.append(_clipper_video_item(project_dir, f"exports/{fmt}", f, clip_lookup, export_format=fmt))
+
+    results.sort(key=lambda x: x.get("modified", ""), reverse=True)
+    return results
+
+
+def _clipper_video_item(project_id, subpath, filename, clip_lookup, export_format=None):
+    clip_id = filename.replace(".mp4", "")
+    clip = None
+    project = None
+    if clip_id in clip_lookup:
+        clip, project = clip_lookup[clip_id]
+    base_dir = os.path.join(os.path.dirname(__file__), "static/clipper/projects", project_id, subpath)
+    item = {
+        "filename": filename,
+        "url": f"/static/clipper/projects/{project_id}/{subpath}/{filename}",
+        "project_id": project_id,
+        "project_name": project.name if project else "",
+        "clip_id": clip_id,
+        "hook_title": clip.hook_title if clip else "",
+        "thumbnail_url": clip.thumbnail_url if clip else "",
+        "export_format": export_format,
+        "metadata": {"title": clip.hook_title} if clip else None,
+    }
+    try:
+        item["modified"] = datetime.fromtimestamp(os.path.getmtime(os.path.join(base_dir, filename))).isoformat()
+    except Exception:
+        item["modified"] = ""
+    return item
 
 # Get all available subtitles
 @app.route("/api/getSubtitles", methods=["GET"])
@@ -1070,6 +1246,17 @@ def schedule_to_magicsync():
             print(colored("[-]   MISSING: platforms is empty", "red"))
             return jsonify({"status": "error", "message": "At least one platform is required"}), 400
 
+        # Resolve folder: a bare filename that exists only under generated_videos/instagram
+        # must map to instagram/<name>, otherwise the assembled /api/video/<name> 404s for
+        # any client fetching it (MagicSync pulls the video from this URL).
+        if "/" not in video_filename and not os.path.exists(
+            os.path.join(os.path.dirname(__file__), "static", "generated_videos", video_filename)
+        ) and os.path.exists(
+            os.path.join(os.path.dirname(__file__), "static", "generated_videos", "instagram", video_filename)
+        ):
+            video_filename = f"instagram/{video_filename}"
+            print(colored(f"[*]   Resolved Instagram video path: {video_filename}", "cyan"))
+
         url = data.get("url", os.getenv("MAGICSYNC_BASE_URL", "http://localhost:3000"))
         api_token = data.get("apiToken", os.getenv("MAGICSYNC_API_TOKEN", ""))
 
@@ -1158,26 +1345,62 @@ def schedule_to_magicsync():
 def delete_video():
     data = request.get_json()
     filename = data.get("filename", "")
+    category = data.get("category", "generated")  # generated | instagram | clipper | downloads
     if not filename:
         return jsonify({"status": "error", "message": "filename is required"}), 400
 
-    generated_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "generated_videos"))
-    video_path = os.path.join(generated_dir, filename)
-    basename = os.path.splitext(filename)[0]
-    json_path = os.path.join(generated_dir, f"{basename}.json")
+    # Sanitize: never allow path traversal
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        return jsonify({"status": "error", "message": "Invalid filename"}), 400
+
+    static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+
+    if category == "instagram":
+        target_dir = os.path.join(static_root, "generated_videos", "instagram")
+    elif category == "downloads":
+        target_dir = os.path.join(static_root, "assets", "temp")
+    elif category == "clipper":
+        project_id = os.path.basename(data.get("project_id", ""))
+        subpath = data.get("subpath", "renders")  # renders | exports/<fmt>
+        subparts = [os.path.basename(p) for p in subpath.split("/") if p]
+        target_dir = os.path.join(static_root, "clipper", "projects", project_id, *subparts)
+    else:
+        target_dir = os.path.join(static_root, "generated_videos")
+
+    if not os.path.abspath(target_dir).startswith(static_root):
+        return jsonify({"status": "error", "message": "Invalid path"}), 400
+
+    video_path = os.path.join(target_dir, safe_name)
+    basename = os.path.splitext(safe_name)[0]
+    json_path = os.path.join(target_dir, f"{basename}.json")
 
     deleted = []
     if os.path.exists(video_path):
         os.remove(video_path)
-        deleted.append(filename)
+        deleted.append(safe_name)
     if os.path.exists(json_path):
         os.remove(json_path)
         deleted.append(f"{basename}.json")
 
+    # Deleting a clipper render resets the clip status so it can be re-rendered
+    if category == "clipper" and deleted:
+        try:
+            from classes.ClipperProject import project_store
+            project = project_store.get_project(data.get("project_id", ""))
+            if project:
+                for clip in project_store.get_clips(project.id):
+                    if clip.id == basename:
+                        clip.status = "selected"
+                        project_store.save_clip(clip)
+                        break
+        except Exception as e:
+            print(colored(f"[-] Could not reset clip status after delete: {e}", "yellow"))
+
     if not deleted:
         return jsonify({"status": "error", "message": "Video file not found"}), 404
 
-    print(colored(f"[+] Deleted: {', '.join(deleted)}", "green"))
+    print(colored(f"[+] Deleted ({category}): {', '.join(deleted)}", "green"))
     return jsonify({"status": "success", "message": f"Deleted {', '.join(deleted)}"})
 
 
@@ -1619,6 +1842,143 @@ def leadgen_enhance_profile():
         return jsonify({"status": "ok", "data": result})
     except Exception as e:
         print(colored(f"[-] Error enhancing profile: {e}", "red"))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ==================== CLIPPER Studio: stock media + AI topics ====================
+# Proxies so the browser editor (@elah studio page) never needs vendor API keys.
+
+
+def _pexels_headers():
+    key = os.environ.get("PEXELS_API_KEY")
+    return key, {"Authorization": key} if key else None
+
+
+@app.route("/api/stock/videos", methods=["GET"])
+def stock_search_videos():
+    """Pexels video search for the editor's Videos panel.
+    Returns browser-usable items: {id, url, thumbnail, duration, user, width, height}."""
+    query = request.args.get("query", "")
+    per_page = int(request.args.get("per_page", 12))
+    key, headers = _pexels_headers()
+    if not key:
+        return jsonify({"status": "error", "message": "PEXELS_API_KEY not configured"}), 400
+    if not query.strip():
+        return jsonify({"status": "error", "message": "query is required"}), 400
+    try:
+        from urllib.parse import quote
+        resp = requests.get(
+            f"https://api.pexels.com/videos/search?query={quote(query)}&per_page={per_page}",
+            headers=headers, timeout=20,
+        )
+        if resp.status_code != 200:
+            return jsonify({"status": "error", "message": f"Pexels error {resp.status_code}"}), 502
+        data = resp.json()
+        items = []
+        for v in data.get("videos", []):
+            # Prefer an mp4 file around 1080p for editor preview performance
+            files = v.get("video_files", [])
+            best = None
+            for f in sorted(files, key=lambda x: abs((x.get("height") or 1080) - 1080)):
+                if f.get("link"):
+                    best = f
+                    break
+            if not best or not best.get("link"):
+                continue
+            pictures = v.get("video_pictures", [])
+            items.append({
+                "id": v.get("id"),
+                "url": best["link"],
+                "thumbnail": pictures[0].get("picture") if pictures else "",
+                "duration": v.get("duration", 0),
+                "user": (v.get("user") or {}).get("name", ""),
+                "width": best.get("width") or v.get("width", 0),
+                "height": best.get("height") or v.get("height", 0),
+            })
+        return jsonify({"status": "success", "data": items})
+    except Exception as e:
+        print(colored(f"[-] Stock video search failed: {e}", "red"))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/stock/photos", methods=["GET"])
+def stock_search_photos():
+    """Pexels photo search for the editor's Photos panel."""
+    query = request.args.get("query", "")
+    per_page = int(request.args.get("per_page", 12))
+    key, headers = _pexels_headers()
+    if not key:
+        return jsonify({"status": "error", "message": "PEXELS_API_KEY not configured"}), 400
+    if not query.strip():
+        return jsonify({"status": "error", "message": "query is required"}), 400
+    try:
+        from urllib.parse import quote
+        resp = requests.get(
+            f"https://api.pexels.com/v1/search?query={quote(query)}&per_page={per_page}",
+            headers=headers, timeout=20,
+        )
+        if resp.status_code != 200:
+            return jsonify({"status": "error", "message": f"Pexels error {resp.status_code}"}), 502
+        data = resp.json()
+        items = []
+        for p in data.get("photos", []):
+            src = p.get("src", {})
+            items.append({
+                "id": p.get("id"),
+                "url": src.get("large2x") or src.get("large") or src.get("original", ""),
+                "thumbnail": src.get("medium") or src.get("small", ""),
+                "user": p.get("photographer", ""),
+                "width": p.get("width", 0),
+                "height": p.get("height", 0),
+                "duration": None,
+            })
+        return jsonify({"status": "success", "data": items})
+    except Exception as e:
+        print(colored(f"[-] Stock photo search failed: {e}", "red"))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/clipper/ai/topics", methods=["POST"])
+def clipper_ai_topics():
+    """Agentic AI topic options for the studio: prompt → 4 composable topics.
+
+    Returns: {options: [{name, description, videotags: [str], imagetags: [str], musicQuery: str}]}
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        prompt = (data.get("prompt") or "").strip()
+        if not prompt:
+            return jsonify({"status": "error", "message": "prompt is required"}), 400
+
+        from gpt import generate_response
+        from llm_providers import get_clipper_ai_model
+        ai_model = get_clipper_ai_model()
+
+        sys_prompt = f"""You are a video editor assistant. The user wants to build a short video from a text prompt.
+
+User prompt: "{prompt}"
+
+Return JSON ONLY with 4 topic option objects, no markdown:
+{{"options": [
+  {{"name": "short topic title (3-5 words)", "description": "one-line concept", "videotags": ["2-3 short english search tags for stock video"], "imagetags": ["2-3 tags"], "musicQuery": "one mood keyword for music"}}
+]}}
+
+Rules: topics must be distinct visual angles on the same prompt; videotags/imagetags are lower-case english words the Pexels search API understands; no commentary."""
+        text = generate_response(sys_prompt, ai_model).strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        import json as _json
+        parsed = _json.loads(text)
+        options = parsed.get("options", [])[:4]
+        if not options:
+            return jsonify({"status": "error", "message": "No options generated"}), 502
+        return jsonify({"status": "success", "data": {"options": options}})
+    except Exception as e:
+        print(colored(f"[-] AI topics failed: {e}", "red"))
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

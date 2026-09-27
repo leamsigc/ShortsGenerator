@@ -40,4 +40,14 @@ export default defineNuxtConfig({
       pexelsApiKey: process.env.PEXELS_API_KEY,
     },
   },
+  vite: {
+    // @elah/core spawns its MP4 export worker via `new URL(...)` — module
+    // workers require format 'es', and pre-bundling breaks the worker ref.
+    worker: {
+      format: "es",
+    },
+    optimizeDeps: {
+      exclude: ["@elah/core", "mediabunny"],
+    },
+  },
 });

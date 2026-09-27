@@ -1,0 +1,19 @@
+# ShortsGenerator / CLIPPER — pinned Anaconda environment
+#
+# Create:   conda env create -f environment.yml
+# Activate: conda activate shortsgenerator
+# Update:   conda env update -f environment.yml --prune
+#
+# Python 3.11 is required (3.10 is deprecated by yt-dlp and other deps;
+# verified compatible with all pinned packages).
+# ffmpeg comes from conda-forge; the rest installs from requirements.txt via pip.
+name: shortsgenerator
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - ffmpeg
+  - git
+  - pip
+  - pip:
+      - -r requirements.txt

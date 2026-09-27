@@ -11,8 +11,9 @@
     "start": "node .output/server/index.mjs"
   },
   "dependencies": {
+    "@elah/core": "^0.4.1",
     "@pinia/nuxt": "^0.9.0",
-    "@unocss/nuxt": "^0.65.2",
+    "@unocss/nuxt": "^66.8.1",
     "mediabunny": "^1.48.0",
     "nuxt": "^3.14.1592",
     "tabulator-tables": "^6.3.0",
@@ -25,6 +26,7 @@
     "@nuxt/devtools": "^1.6.4",
     "@nuxtjs/i18n": "^9.1.1",
     "@nuxtjs/tailwindcss": "^6.12.2",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/typography": "^0.5.15",
     "@types/tabulator-tables": "^6.2.3",
     "@vueuse/nuxt": "^12.0.0",

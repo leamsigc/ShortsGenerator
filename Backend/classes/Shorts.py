@@ -28,7 +28,7 @@ class Shorts:
     """
     # Buffer time in seconds after voice audio ends
     VIDEO_END_BUFFER = 3.0
-    def __init__(self,video_subject: str, paragraph_number: int, ai_model: str,customPrompt: str="", extra_prompt: str = "", script_template: str = ""):
+    def __init__(self,video_subject: str, paragraph_number: int, ai_model: str,customPrompt: str="", extra_prompt: str = "", script_template: str = "", script_length: str = "standard"):
         """
         Constructor for YouTube Class.
 
@@ -56,6 +56,7 @@ class Shorts:
         self.customPrompt = customPrompt
         self.extra_prompt = extra_prompt
         self.script_template = script_template
+        self.script_length = script_length
         self.globalSettings = get_settings()
 
 
@@ -119,6 +120,15 @@ class Shorts:
     def get_video_paths(self):
         return self.video_paths
 
+    # Target script lengths: name -> (approx words, approx seconds of voiceover)
+    SCRIPT_LENGTHS = {
+        "short": (80, 30),
+        "standard": (120, 60),
+        "long": (220, 110),
+        "extended": (350, 180),
+        "epic": (500, 260),
+    }
+
     def GenerateScript(self):
         """
         Generate a script for a video, depending on the subject of the video, the number of paragraphs, and the AI model.
@@ -151,6 +161,16 @@ class Shorts:
         # Add the global prompt end
         prompt_end = self.globalSettings["scriptSettings"]["defaultPromptEnd"] or ""
         prompt += prompt_end
+
+        # Enforce the requested script length (overrides template word-count hints)
+        words, seconds = self.SCRIPT_LENGTHS.get(self.script_length, self.SCRIPT_LENGTHS["standard"])
+        prompt += f"""
+
+## LENGTH REQUIREMENT (HIGHEST PRIORITY — overrides any other length guidance):
+- The final script MUST be approximately {words} words (about {seconds} seconds of voiceover).
+- Do NOT stop at a shorter length. If the topic runs out, go deeper: more examples, more details, more tips, more story beats.
+- Keep the same viral/conversational style for the whole {words} words.
+"""
 
         # Generate script
         response = generate_response(prompt, self.ai_model)
@@ -255,17 +275,60 @@ class Shorts:
 
 
     def GenerateMetadata(self):
-        self.video_title, self.video_description, self.video_tags, self.video_post_content = generate_metadata(self.video_subject, self.final_script, self.ai_model)
+        try:
+            self.video_title, self.video_description, self.video_tags, self.video_post_content = generate_metadata(self.video_subject, self.final_script, self.ai_model)
+        except Exception as e:
+            # Metadata is non-critical: derive fallbacks so the rendered video
+            # and its metadata file still complete the pipeline.
+            print(colored(f"[-] AI metadata generation failed: {e}", "yellow"))
+            print(colored("[*] Using derived fallback metadata so the video is not lost.", "cyan"))
+            subject = (self.video_subject or "short video").strip()
+            script_preview = " ".join((self.final_script or "").split())[:200]
+            self.video_title = subject[:60]
+            self.video_description = f"{subject}\n\n{script_preview}" if script_preview else subject
+            self.video_tags = [w for w in subject.split() if len(w) > 2][:6]
+            self.video_post_content = f"New video: {subject}"
 
-        # Compute a suggested schedule (next weekday at 12:00 UTC)
+        # Compute a dynamic suggested schedule based on platform best engagement windows.
+        # Picks the next upcoming peak audience time slot instead of a fixed date/time.
         from datetime import datetime, timedelta
         now = datetime.utcnow()
-        next_day = now + timedelta(days=1)
-        if next_day.weekday() == 5:
-            next_day += timedelta(days=2)
-        elif next_day.weekday() == 6:
-            next_day += timedelta(days=1)
-        self.suggested_schedule = next_day.replace(hour=12, minute=0, second=0, microsecond=0).isoformat()
+
+        # Peak engagement windows for short-form content (UTC hours)
+        # Morning commute, lunch break, and evening prime time
+        peak_hours = [3, 7, 12, 17, 19, 21]
+        peak_days = [1, 2, 3, 4, 6]  # Mon, Tue, Wed, Thu, Sat (best engagement days)
+
+        candidates = []
+        # Next 7 days, evaluate every peak hour on each day
+        for day_offset in range(1, 8):
+            day = now + timedelta(days=day_offset)
+            for hour in peak_hours:
+                candidate = day.replace(hour=hour, minute=0, second=0, microsecond=0)
+                if candidate <= now:
+                    continue
+                score = 0
+                # Prefer peak days
+                if candidate.weekday() in peak_days:
+                    score += 2
+                # Prefer evening prime time slots (highest short-form engagement)
+                if hour in (17, 19, 21):
+                    score += 3
+                elif hour in (12,):
+                    score += 2
+                else:
+                    score += 1
+                # Slight preference for earlier slots to keep content fresh
+                score -= day_offset * 0.1
+                candidates.append((score, candidate))
+
+        if candidates:
+            candidates.sort(key=lambda x: (-x[0], x[1]))
+            self.suggested_schedule = candidates[0][1].isoformat()
+        else:
+            self.suggested_schedule = (now + timedelta(days=1)).replace(
+                hour=19, minute=0, second=0, microsecond=0
+            ).isoformat()
 
         # Write the metadata in a json file with the video title as the filename
         self.WriteMetadataToFile(self.video_title, self.video_description, self.video_tags, self.video_post_content, self.suggested_schedule)
@@ -447,7 +510,7 @@ class Shorts:
             shutil.copy2(source_meta, dest_meta)
             print(colored(f"[+] Copied metadata to {dest_basename}.json", "green"))
 
-    def AddMusic(self, use_music, custom_song_path="", music_source="library"):
+    def AddMusic(self, use_music, custom_song_path="", music_source="library", music_volume=0.1, sfx_paths=None, sfx_volume=0.9):
         original_video_path = self.final_video_path
         dest_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "static", "generated_videos"))
         output_filename = f"{uuid4()}-music.mp4"
@@ -472,7 +535,7 @@ class Shorts:
                 else:
                     song_path = choose_random_song()
 
-            if ffmpeg_add_music_to_video(original_video_path, song_path, output_path, volume=0.1):
+            if ffmpeg_add_music_to_video(original_video_path, song_path, output_path, volume=float(music_volume), sfx_paths=sfx_paths, sfx_volume=float(sfx_volume)):
                 self.final_music_video_path = output_filename
                 if original_video_path:
                     self._copy_metadata_to(original_video_path, output_path)

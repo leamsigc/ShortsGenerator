@@ -4,6 +4,60 @@ YouTube Shorts video generation system. Backend: Python Flask (port 8080). Front
 
 ## Quick Start
 
+### Recommended: Anaconda/Miniconda environment (isolated, pinned versions)
+
+The project needs Python 3.11 with pinned package versions (see `environment.yml` / `requirements.txt`).
+Do **not** install into `base` — conflicting versions in base cause runtime errors (e.g. transcription failures).
+
+```bash
+# 1. Create the environment (one-time, ~5 min: Python 3.11 + ffmpeg + all pip deps)
+conda env create -f environment.yml
+
+# 2. Activate it
+conda activate shortsgenerator
+
+# 3. Configure and run
+cp .env.example .env
+# Fill .env: PEXELS_API_KEY, TIKTOK_SESSION_ID, IMAGEMAGICK_BINARY
+cd Backend && python main.py           # Flask on :8080
+cd UI && npm install && npm run dev     # Nuxt on :3000
+```
+
+Useful commands:
+
+```bash
+conda activate shortsgenerator          # switch into the env (do this in every new shell)
+conda env update -f environment.yml --prune   # re-sync after requirements.txt changes
+conda env remove -n shortsgenerator           # delete and recreate if broken
+conda run -n shortsgenerator python Backend/main.py   # run without activating
+```
+
+Verify the env is healthy:
+
+```bash
+conda activate shortsgenerator
+python -c "import moviepy, PIL, flask, faster_whisper, ctranslate2; print('env OK')"
+```
+
+### Alternative A: Anaconda/Miniconda venv (no conda env needed)
+
+If `conda env create` is slow or unavailable, create a plain Python 3.11 venv in the repo:
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env          # Fill: PEXELS_API_KEY, TIKTOK_SESSION_ID, IMAGEMAGICK_BINARY
+
+# Run
+cd Backend && ../.venv/bin/python main.py    # Flask on :8080
+cd UI && npm install && npm run dev          # Nuxt on :3000
+```
+
+This is the fastest path — `pip check` verified clean with the pinned versions
+(Pillow 12.3.0 + moviepy 1.0.3 + yt-dlp 2026.08.19).
+
+### Alternative B: plain pip (into an activated venv/conda env)
+
 ```bash
 pip install -r requirements.txt && cp .env.example .env
 # Fill .env: PEXELS_API_KEY, TIKTOK_SESSION_ID, IMAGEMAGICK_BINARY

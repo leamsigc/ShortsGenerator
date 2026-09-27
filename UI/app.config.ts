@@ -1,25 +1,28 @@
-import { _colors, _fontFamily } from "#tailwind-config/theme.mjs";
+import { _fontFamily } from "#tailwind-config/theme.mjs";
 
 export default defineAppConfig({
   naiveui: {
     themeConfig: {
       shared: {
         common: {
-          fontFamily: _fontFamily.sans.join(", "),
+          fontFamily: "'Poppins', sans-serif",
         },
       },
       light: {
         common: {
-          primaryColor: _colors.blue[600],
-          primaryColorHover: _colors.blue[500],
-          primaryColorPressed: _colors.blue[700],
+          primaryColor: "#00DC82",
+          primaryColorHover: "rgba(0,220,130,0.90)",
+          primaryColorPressed: "#00b86b",
+          borderRadius: "8px",
+          textColorBase: "#0F172A",
+          borderColor: "rgba(15,23,42,0.08)",
         },
       },
       dark: {
         common: {
-          primaryColor: _colors.blue[500],
-          primaryColorHover: _colors.blue[400],
-          primaryColorPressed: _colors.blue[600],
+          primaryColor: "#00DC82",
+          primaryColorHover: "rgba(0,220,130,0.90)",
+          primaryColorPressed: "#00b86b",
         },
       },
     },

@@ -183,7 +183,7 @@ def _ffmpeg_images_to_video(image_paths: List[str], duration_per_image: float, t
 
     filter_complex = "".join(filter_parts)
 
-    cmd = ["ffmpeg", "-y", "-hwaccel", "auto"]
+    cmd = ["ffmpeg", "-y"]  # software decode (hwaccel breaks on AV1)
     for i, p in enumerate(inputs):
         dur = durations[i] if durations and i < len(durations) else duration_per_image
         cmd.extend(["-loop", "1", "-t", str(dur), "-i", p])
@@ -242,7 +242,7 @@ def _ffmpeg_prepend_images(image_paths: List[str], duration_per_image: float, vi
 
     filter_complex = "".join(filter_parts)
 
-    cmd = ["ffmpeg", "-y", "-hwaccel", "auto"]
+    cmd = ["ffmpeg", "-y"]  # software decode (hwaccel breaks on AV1)
     for p in inputs:
         cmd.extend(["-loop", "1", "-t", str(duration_per_image), "-i", p])
     cmd.extend(["-i", video_path])
@@ -708,7 +708,9 @@ def _ffmpeg_render_with_subtitles(
     video_filter = f"subtitles={safe_subs}:fontsdir={safe_fontdir}:original_size={target_w}x{target_h}:force_style={escaped_style}{trim_filter}"
 
     cmd = [
-        "ffmpeg", "-y", "-hwaccel", "auto",
+        # No -hwaccel: software decode is reliable; hardware AV1 decode fails
+        # on platforms without AV1 support and breaks the whole transcode.
+        "ffmpeg", "-y",
         "-i", video_path,
         "-i", audio_path,
         "-vf", video_filter,
@@ -889,27 +891,91 @@ def ffmpeg_add_music_to_video(
     music_path: str,
     output_path: str,
     volume: float = 0.1,
+    sfx_paths=None,
+    sfx_volume: float = 0.9,
 ) -> bool:
+    """Mix background music (looped, at `volume`) into the video's audio track.
+
+    Optionally overlays sound effects from `sfx_paths` (list of dicts with keys
+    `path` and optional `startTime`). While an effect plays, the music is
+    automatically ducked (sidechaincompress) so the effect is clearly audible,
+    and the music returns to normal volume when the effect ends.
+    """
     import subprocess
     video_dur = _ffprobe_duration(video_path)
     music_dur = _ffprobe_duration(music_path) or 1
     loops = max(1, int(video_dur / music_dur) + 1) if music_dur > 0 else 1
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", video_path,
-        "-stream_loop", str(loops),
-        "-i", music_path,
-        "-filter_complex",
-        f"[0:a]volume=1.0[0a];[1:a]volume={volume}[1a];[0a][1a]amix=inputs=2:duration=first[audio]",
-        "-c:v", "copy",
-        "-map", "0:v:0",
-        "-map", "[audio]",
-        "-c:a", "aac",
-        "-shortest",
-        "-movflags", "+faststart",
-        output_path,
-    ]
+    sfx_paths = sfx_paths or []
+
+    if not sfx_paths:
+        # Simple two-input mix (no ducking needed)
+        filter_complex = (
+            f"[0:a]volume=1.0[0a];[1:a]volume={volume}[1a];"
+            f"[0a][1a]amix=inputs=2:duration=first[audio]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-stream_loop", str(loops),
+            "-i", music_path,
+            "-filter_complex", filter_complex,
+            "-c:v", "copy",
+            "-map", "0:v:0",
+            "-map", "[audio]",
+            "-c:a", "aac",
+            "-shortest",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+    else:
+        # Build a filter graph: music looped + each SFX at its start time.
+        # Music is sidechain-ducked by the mixed SFX track so the music
+        # effectively pauses (drops to a low level) while an effect plays.
+        # Inputs: 0 = video, 1 = music, 2.. = sfx
+        inputs = ["ffmpeg", "-y", "-i", video_path, "-stream_loop", str(loops), "-i", music_path]
+        for sfx in sfx_paths:
+            inputs.extend(["-i", sfx.get("path", "")])
+
+        parts = []
+        # Voice from the video at full volume
+        parts.append("[0:a]volume=1.0[voice]")
+        # Music at configured volume
+        parts.append(f"[1:a]volume={volume}[music]")
+
+        # Mix all effects onto one track, each delayed to its start time
+        n_sfx = len(sfx_paths)
+        for i, sfx in enumerate(sfx_paths):
+            start = float(sfx.get("startTime", 0) or 0)
+            parts.append(f"[{i + 2}:a]volume={sfx_volume},adelay={int(start * 1000)}|{int(start * 1000)}[sfx{i}]")
+        if n_sfx == 1:
+            parts.append("[sfx0]anull[sfxmix0]")
+        else:
+            mix_in = "".join(f"[sfx{i}]" for i in range(n_sfx))
+            parts.append(f"{mix_in}amix=inputs={n_sfx}:duration=longest:normalize=0[sfxmix0]")
+        # Split the effect track: one copy drives the sidechain (ducking),
+        # the other is mixed into the final audio.
+        parts.append("[sfxmix0]asplit=2[sfxchain][sfxout]")
+
+        # Duck the music whenever the effect track has energy (auto-pause).
+        parts.append(
+            "[music][sfxchain]sidechaincompress="
+            "threshold=0.02:ratio=20:attack=5:release=400:makeup=1[ducked]"
+        )
+        # Final mix: voice + ducked music + effects
+        parts.append("[voice][ducked][sfxout]amix=inputs=3:duration=first:normalize=0[audio]")
+
+        filter_complex = ";".join(parts)
+        cmd = inputs + [
+            "-filter_complex", filter_complex,
+            "-c:v", "copy",
+            "-map", "0:v:0",
+            "-map", "[audio]",
+            "-c:a", "aac",
+            "-shortest",
+            "-movflags", "+faststart",
+            output_path,
+        ]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)

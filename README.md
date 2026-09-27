@@ -27,6 +27,20 @@ Automate YouTube Shorts creation locally — script generation, stock video sear
 ![Generate 2](/static/assets/images/Screenshot2.png?raw=true)
 ![Generate 3](/static/assets/images/Screenshot3.png?raw=true)
 
+## Local usage:
+
+```bash
+git clone https://github.com/leamsigc/ShortsGenerator.git
+cd ShortsGenerator
+cp .env.example .env
+#Start the backend
+python Backend/main.py
+
+#Start the frontend
+cd UI && pnpm i && npx  nuxt dev --tunnel #Tunnel to add the connection to upload the videos to magicsync  
+```
+
+## Workflow
 
 
 ## Quick Start (Docker)

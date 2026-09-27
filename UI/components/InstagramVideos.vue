@@ -76,7 +76,7 @@ onMounted(() => {
             <!-- Video Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div v-for="item in instagramVideos" :key="item.filename" class="video-card">
-                    <div class="relative bg-slate-800 rounded-lg overflow-hidden group">
+                    <div class="relative bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-lg overflow-hidden group">
                         <!-- Video Preview -->
                         <video class="w-full aspect-[9/16] object-cover"
                             :src="`${URL}${item.url}`" controls crossorigin="anonymous"></video>

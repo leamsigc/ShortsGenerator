@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import soundfile as sf
 from typing import List, Dict, Optional
@@ -66,7 +67,64 @@ QUALITY_PRESETS = [
 
 SUPPORTED_LANGUAGE_CODES = {lang["code"] for lang in LANGUAGES}
 
+# The vector_estimator ONNX graph attends text (padded to 1000 tokens) against
+# latent frames. supertonic's own chunk_text() never force-splits a single
+# overlong sentence, so one 1000+ char/token run-on sentence reaches the model
+# whole and dies in Mul_13: "broadcast ... 1000 by N". Cap every piece we send
+# well below that (token count tracks char count ~1:1 for latin scripts).
+MAX_CHUNK_CHARS = 280
+CHUNK_SILENCE_SEC = 0.3
+
+# Sentence split on . ? ! ; : — + newline, keeping the delimiter.
+_SENT_SPLIT_RE = re.compile(r'(?<=[.?!\n;:—])\s+')
+
 _tts_instance = None
+
+
+def _force_split(text: str, max_chars: int) -> List[str]:
+    """Split an overlong sentence on word boundaries (hard-split huge words)."""
+    words = text.split()
+    pieces, current = [], ""
+    for word in words:
+        while len(word) > max_chars:
+            # Flush current, then carve max_chars off the huge word itself.
+            if current:
+                pieces.append(current)
+                current = ""
+            pieces.append(word[:max_chars])
+            word = word[max_chars:]
+        candidate = f"{current} {word}".strip() if current else word
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            if current:
+                pieces.append(current)
+            current = word
+    if current:
+        pieces.append(current)
+    return [p for p in pieces if p]
+
+
+def split_for_tts(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[str]:
+    """Split text into pieces the ONNX model can handle.
+
+    Sentence-aware first, then word-boundary force-split for run-on
+    sentences the library chunker would pass through unbounded.
+    """
+    chunks: List[str] = []
+    for paragraph in re.split(r'\n\s*\n+', text.strip()):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        for sentence in _SENT_SPLIT_RE.split(paragraph):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if len(sentence) <= max_chars:
+                chunks.append(sentence)
+            else:
+                chunks.extend(_force_split(sentence, max_chars))
+    return chunks
 
 
 def _get_tts():
@@ -100,19 +158,36 @@ def tts(
 
     tts = _get_tts()
     style = tts.get_voice_style(voice_name=voice)
+    sample_rate = getattr(tts, "sample_rate", 44100)
 
-    wav, duration = tts.synthesize(
-        text=text,
-        lang=lang,
-        voice_style=style,
-        total_steps=total_steps,
-        speed=speed,
-    )
+    # Pre-split: the library chunker passes a single overlong sentence to the
+    # model unbounded, which crashes the vector_estimator (Mul_13 broadcast
+    # "1000 by N"). Every piece here is capped at MAX_CHUNK_CHARS.
+    pieces = split_for_tts(text)
+    if len(pieces) > 1:
+        print(colored(f"[*] Supertonic: split into {len(pieces)} chunks (longest {max(len(p) for p in pieces)} chars)", "cyan"))
 
-    audio_data = wav.squeeze()
-    sample_rate = 44100
+    silence = np.zeros(int(sample_rate * CHUNK_SILENCE_SEC), dtype=np.float32)
+    wav_parts: List[np.ndarray] = []
+    total_duration = 0.0
+    for i, piece in enumerate(pieces):
+        wav, duration = tts.synthesize(
+            text=piece,
+            lang=lang,
+            voice_style=style,
+            total_steps=total_steps,
+            speed=speed,
+        )
+        chunk = np.asarray(wav.squeeze(), dtype=np.float32)
+        wav_parts.append(chunk)
+        total_duration += float(duration[0])
+        if i < len(pieces) - 1:
+            wav_parts.append(silence)
+            total_duration += CHUNK_SILENCE_SEC
+
+    audio_data = np.concatenate(wav_parts) if len(wav_parts) > 1 else np.asarray(wav_parts[0])
     sf.write(filename, audio_data, sample_rate)
-    print(colored(f"[+] Supertonic audio saved to '{filename}' ({duration[0]:.2f}s)", "green"))
+    print(colored(f"[+] Supertonic audio saved to '{filename}' ({total_duration:.2f}s)", "green"))
     return filename
 
 

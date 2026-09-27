@@ -37,11 +37,18 @@ interface MagicSyncBusiness {
 }
 
 const { globalSettings } = useGlobalSettings();
-const { video } = useVideoSettings();
+const { video, defaults: videoDefaults } = useVideoSettings();
 
 // Load subtitle templates from API
-const settingsResponse = await $fetch<{ data: any }>(`${API_URL}/api/settings`);
-const settingsData = settingsResponse.data;
+let settingsData: any = null;
+let settingsLoadError: string | null = null;
+try {
+  const settingsResponse = await $fetch<{ data: any }>(`${API_URL}/api/settings`);
+  settingsData = settingsResponse.data;
+} catch (e: any) {
+  settingsLoadError = e?.message || "Backend unreachable";
+  console.error("Failed to load settings (is the backend running on " + API_URL + "?):", e);
+}
 const subtitleTemplateOptions = computed(() => {
   return settingsData?.subtitleTemplates?.options?.map((t: any) => ({
     label: t.label,
@@ -129,6 +136,14 @@ const addVideoSegment = () => {
 const showModal = ref(!video.value.script);
 const extraPrompt = ref(false);
 
+const scriptLengthOptions = [
+  { label: "Short (~30s, ~80 words)", value: "short" },
+  { label: "Standard (~60s, ~120 words)", value: "standard" },
+  { label: "Long (~2 min, ~220 words)", value: "long" },
+  { label: "Extended (~3 min, ~350 words)", value: "extended" },
+  { label: "Epic (~4+ min, ~500 words)", value: "epic" },
+];
+
 const currentState = ref<"script" | "loading" | "Error">("script");
 
 const HandleGenerateScript = async () => {
@@ -144,6 +159,7 @@ const HandleGenerateScript = async () => {
         aiModel: globalSettings.value.aiModel,
         extraPrompt: video.value.extraPrompt,
         scriptTemplate: video.value.scriptTemplate,
+        scriptLength: video.value.scriptLength || "standard",
       },
     });
 
@@ -157,7 +173,7 @@ const HandleGenerateScript = async () => {
     currentState.value = "Error";
   }
 };
-// State management
+// State management — now duration-based so steps auto-progress while backend works
 const loaderStates = reactive({
   isGeneratingVideo: false,
   isCombiningVideos: false,
@@ -173,26 +189,31 @@ const uiState = reactive({
     uiState.isAfterTextLoading = false;
   },
 });
-// Async loading steps configuration
+// Video generation steps — tracked via backend progress (duration simulates while API is pending)
 const asyncLoadingSteps = computed<Step[]>(() => [
   {
     text: "Generating Voice",
-    async: loaderStates.isGeneratingVideo,
+    duration: 1800,
     afterText: "Voice Generated",
   },
   {
+    text: "Downloading & Cutting Videos",
+    duration: 2500,
+    afterText: "Videos Ready",
+  },
+  {
     text: "Combining Audio and Video",
-    async: loaderStates.isCombiningVideos,
+    duration: 2200,
     afterText: "Video Generated",
   },
   {
-    text: "Adding subtitle",
-    async: loaderStates.isAddingSubtitles,
-    afterText: "Subtitle Added",
+    text: "Adding Subtitles",
+    duration: 1800,
+    afterText: "Subtitles Added",
   },
   {
     text: "Saving final video",
-    duration: 1000,
+    duration: 800,
     action: handleAsyncLoadingComplete,
   },
 ]);
@@ -200,18 +221,19 @@ function handleAsyncLoadingComplete() {
   uiState.isAfterTextLoading = false;
 }
 
+// Music adding steps — shown in same style modal when adding music
+const musicUiState = reactive({ loading: false })
+const musicSteps = computed<Step[]>(() => [
+  { text: "Preparing audio", duration: 1200, afterText: "Audio prepared" },
+  { text: "Mixing music & SFX", duration: 1800, afterText: "Music mixed" },
+  { text: "Finalizing video", duration: 1000, action: () => { musicUiState.loading = false } },
+])
+
 
 const HandleGenerateVideo = async () => {
   try {
-
-    // Reset states
+    // Show stepped loader that auto-progresses while backend works (tracks backend via keep-open)
     uiState.isAfterTextLoading = true;
-    loaderStates.isGeneratingVideo = true;
-    loaderStates.isCombiningVideos = true;
-    loaderStates.isAddingSubtitles = true;
-
-
-
     currentState.value = "loading";
     showModal.value = false;
     const { data } = await $fetch<{
@@ -252,9 +274,6 @@ const HandleGenerateVideo = async () => {
     console.log({ error });
     currentState.value = "Error";
   } finally {
-    loaderStates.isGeneratingVideo = false;
-    loaderStates.isCombiningVideos = false;
-    loaderStates.isAddingSubtitles = false;
     uiState.isAfterTextLoading = false;
   }
 };
@@ -274,6 +293,7 @@ const HandleUpdateSettings = async (
 
 const HandleAddAudio = async () => {
   try {
+    musicUiState.loading = true;
     currentState.value = "loading";
     const musicSource = video.value.musicSource || "library";
     const songPath =
@@ -298,6 +318,11 @@ const HandleAddAudio = async () => {
           musicSource,
           backgroundMusicFromVideo,
           aspectRatio: video.value.aspectRatio || "9:16",
+          musicVolume: video.value.musicVolume ?? 0.1,
+          sfxVolume: video.value.sfxVolume ?? 0.9,
+          soundEffects: (video.value.soundEffects || []).map((s: any) =>
+            typeof s === "string" ? { path: s, startTime: 0 } : s,
+          ),
         },
       }
     );
@@ -305,29 +330,13 @@ const HandleAddAudio = async () => {
   } catch (error) {
     console.log({ error });
   } finally {
+    musicUiState.loading = false;
     currentState.value = "script";
   }
 };
 const HandleClear = () => {
-    video.value = {
-    finalVideoUrl: "",
-    selectedAudio: "",
-    script: "",
-    search: "",
-    voice: "",
-    aiModel: "",
-    extraPrompt: "",
-    videoSubject: "",
-    selectedVideoUrls: [],
-    scriptTemplate: "viral_shorts",
-    useCustomAudio: false,
-    customAudioPath: "",
-    audioStartTime: 0,
-    audioEndTime: 0,
-    images: [],
-    imageDuration: 5,
-    lastMetadata: null,
-  };
+  // Reset from the store's defaults (single source of truth — can never drift)
+  video.value = JSON.parse(JSON.stringify(videoDefaults));
   settingsModal.value = "IDLE";
   showModal.value = true;
 }
@@ -341,6 +350,39 @@ const SearchModal = ref(false);
 const HandleOpenSearchVideo = () => {
   SearchModal.value = !SearchModal.value;
 };
+
+// Sound effects library + picker state
+const sfxLibrary = ref<string[]>([]);
+const sfxPick = ref<string | null>(null);
+const sfxOptions = computed(() => [
+  ...sfxLibrary.value.map((name) => ({ label: name, value: name })),
+  ...["ding", "buzz", "pop", "whoosh", "chime"]
+    .filter((n) => !sfxLibrary.value.some((s) => s.toLowerCase().includes(n)))
+    .map((n) => ({ label: `${n} (built-in tone)`, value: `builtin:${n}` })),
+]);
+const addSfx = () => {
+  if (!sfxPick.value) return;
+  const list = video.value.soundEffects ?? [];
+  const entry = sfxPick.value.startsWith("builtin:")
+    ? { path: sfxPick.value, startTime: 0 }
+    : { path: `static/assets/sfx/${sfxPick.value}`, startTime: 0 };
+  if (!list.some((s) => s.path === entry.path)) {
+    video.value.soundEffects = [...list, entry];
+  }
+  sfxPick.value = null;
+};
+
+const loadSfxLibrary = async () => {
+  try {
+    const res = await $fetch<{ status: string; data: { sfx: string[] } }>(`${API_URL}/api/getSfx`);
+    if (res.status === "success") {
+      sfxLibrary.value = (res.data.sfx || []).filter((f) => !f.startsWith("."));
+    }
+  } catch (e) {
+    console.error("Failed to load SFX library", e);
+  }
+};
+onMounted(loadSfxLibrary);
 
 // Thumbnail extraction modal
 const thumbnailModal = ref(false)
@@ -726,7 +768,7 @@ function handleStateChange(state: number) {
 <template>
   <n-modal v-model:show="showModal" :mask-closable="false">
 
-    <div class="bg-slate-100 dark:bg-gray-950 p-10 py-16 dark:text-slate-100 rounded-2xl min-w-2xl">
+    <div class="bg-white dark:bg-neutral-800 p-8 border border-clipper-ink/08 dark:border-white/08 py-16 text-clipper-ink dark:text-white rounded-2xl min-w-2xl">
       <h1 class="text-3xl font-extrabold">
         {{ $t("video.generate.step.one.title") }}
       </h1>
@@ -737,7 +779,7 @@ function handleStateChange(state: number) {
           :autosize="{
             minRows: 10,
             maxRows: 20,
-          }" class="p-5 h-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none" />
+          }" class="p-5 h-full bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl border-none" />
       </n-form-item>
       <n-form-item label="Extra Prompt:">
         <div class="w-full">
@@ -748,7 +790,7 @@ function handleStateChange(state: number) {
                 " type="textarea" show-count clearable :autosize="{
                   minRows: 5,
                   maxRows: 8,
-                }" class="p-5 w-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none" />
+                }" class="p-5 w-full bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl border-none" />
             </n-form-item>
           </n-collapse-transition>
         </div>
@@ -766,8 +808,12 @@ function handleStateChange(state: number) {
   </n-modal>
   <MultiStepLoader :steps="asyncLoadingSteps" :loading="uiState.isAfterTextLoading" @state-change="handleStateChange"
     @complete="handleComplete" @close="uiState.closeAsync" />
+  <MultiStepLoader :steps="musicSteps" :loading="musicUiState.loading" @close="musicUiState.loading = false" />
   <n-spin :show="currentState === 'loading'">
     <div>
+      <div v-if="settingsLoadError" class="max-w-screen-xl mx-auto mt-4 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg p-3">
+        <p class="text-xs font-semibold text-red-600 dark:text-red-400">Backend unreachable ({{ API_URL }}) — start the Flask backend on port 8080 and reload. Templates below are defaults.</p>
+      </div>
       <main class="grid grid-cols-5 gap-5 pr-10 relative">
         <!-- Header -->
         <section class="grid grid-cols-2 gap-10 col-span-3">
@@ -782,6 +828,13 @@ function handleStateChange(state: number) {
                   size="small"
                   class="w-48"
                   clearable
+                />
+                <span class="text-sm font-semibold opacity-70 ml-2">Length:</span>
+                <n-select
+                  v-model:value="video.scriptLength"
+                  :options="scriptLengthOptions"
+                  size="small"
+                  class="w-56"
                 />
               </div>
               <n-button
@@ -799,10 +852,10 @@ function handleStateChange(state: number) {
                 type="textarea" show-count clearable :autosize="{
                   minRows: 18,
                   maxRows: 25,
-                }" class="p-5 h-full dark:bg-slate-800 bg-slate-100 rounded-xl border-none" />
+                }" class="p-5 h-full bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl border-none" />
             </n-form-item>
           </section>
-          <section class="setting dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="setting bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="material-symbols:settings" size="24" />
               <span class="text-lg ml-2">
@@ -854,7 +907,7 @@ function handleStateChange(state: number) {
               </n-button>
             </div>
           </section>
-          <section class="aspect-ratio dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="aspect-ratio bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="icon-park-outline:square-small" size="24" />
               <span class="text-lg ml-2">Aspect Ratio</span>
@@ -868,16 +921,16 @@ function handleStateChange(state: number) {
               </n-radio-group>
             </article>
           </section>
-          <section class="images dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="images bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="material-symbols:image" size="24" />
               <span class="text-lg ml-2">Images</span>
             </header>
             <div class="mt-3 space-y-3">
-              <p class="text-xs text-gray-400">Upload images or extract a frame from a video to use as thumbnail. Images are stitched at the start of the final video.</p>
+              <p class="text-xs text-clipper-ink/60 dark:text-white/60">Upload images or extract a frame from a video to use as thumbnail. Images are stitched at the start of the final video.</p>
 
               <!-- Thumbnail extraction from video -->
-              <div v-if="video.selectedVideoUrls.length > 0" class="bg-slate-700/40 rounded p-3">
+              <div v-if="video.selectedVideoUrls.length > 0" class="bg-neutral-100 dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded p-3">
                 <p class="text-xs font-medium mb-2">Extract Frame from Video</p>
                 <n-button size="small" @click="openThumbnailModal">
                   <template #icon><Icon name="mdi:camera" /></template>
@@ -896,8 +949,8 @@ function handleStateChange(state: number) {
               </div>
 
               <div v-if="video.images?.length > 0" class="space-y-2">
-                <div v-for="(img, idx) in video.images" :key="idx" class="flex items-center gap-2 p-2 bg-slate-700/50 rounded">
-                  <Icon name="mdi:image" class="text-blue-400 shrink-0" />
+                <div v-for="(img, idx) in video.images" :key="idx" class="flex items-center gap-2 p-2 bg-neutral-100 dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-lg">
+                  <Icon name="mdi:image" class="text-clipper-green shrink-0" />
                   <span class="text-xs truncate flex-1">{{ img.name }}</span>
                   <n-input-number v-model:value="img.duration" :min="1" :max="60" size="tiny" class="w-16" />
                   <n-button size="tiny" quaternary @click="removeImage(idx)">
@@ -907,19 +960,19 @@ function handleStateChange(state: number) {
               </div>
             </div>
           </section>
-          <section class="clip-duration dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="clip-duration bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="material-symbols:timeline" size="24" />
               <span class="text-lg ml-2">Clip Duration</span>
             </header>
             <article class="mt-4 flex items-center gap-3">
-              <span class="text-sm text-gray-400">Max seconds per video clip</span>
+              <span class="text-sm text-clipper-ink/60 dark:text-white/60">Max seconds per video clip</span>
               <n-input-number v-model:value="video.clipDuration" :min="1" :max="60" size="small" class="w-24">
                 <template #prefix>Sec</template>
               </n-input-number>
             </article>
           </section>
-          <section class="voice dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="voice bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="icon-park-outline:voice" size="24" />
               <span class="text-lg ml-2">
@@ -940,7 +993,7 @@ function handleStateChange(state: number) {
               </span>
             </article>
           </section>
-          <section class="custom-audio dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="custom-audio bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="material-symbols:audio-file" size="24" />
               <span class="text-lg ml-2">Custom Audio</span>
@@ -954,7 +1007,7 @@ function handleStateChange(state: number) {
             <div v-if="video.useCustomAudio" class="mt-4 space-y-3">
               <div class="flex gap-2">
                 <div
-                  class="border-2 border-dashed border-gray-400 rounded-lg p-3 text-center cursor-pointer hover:border-blue-500 flex-1"
+                  class="border-2 border-dashed border-gray-400 rounded-lg p-3 text-center cursor-pointer hover:border-clipper-green flex-1"
                   @click="customAudioInput?.click()"
                 >
                   <p class="text-sm opacity-70" v-if="!video.customAudioPath">Upload audio</p>
@@ -994,7 +1047,7 @@ function handleStateChange(state: number) {
                 <button
                   @click="handlePreview"
                   :disabled="isPreviewLoading"
-                  class="w-full px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm disabled:opacity-50"
+                  class="w-full px-3 py-2 bg-clipper-green text-white rounded-lg hover:opacity-90 text-sm disabled:opacity-50"
                 >
                   <span v-if="isPreviewLoading">Generating preview...</span>
                   <span v-else>Preview video (browser-side)</span>
@@ -1003,7 +1056,7 @@ function handleStateChange(state: number) {
               </div>
             </div>
           </section>
-          <section class="music dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="music bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="icon-park-outline:music" size="24" />
               <span class="text-lg ml-2">
@@ -1051,8 +1104,53 @@ function handleStateChange(state: number) {
                 <span v-else class="opacity-60">No music selected</span>
               </section>
             </article>
+
+            <!-- Music Volume -->
+            <div class="mt-4">
+              <div class="flex items-center justify-between text-xs opacity-70">
+                <span>Music volume</span>
+                <span>{{ Math.round((video.musicVolume ?? 0.15) * 100) }}%</span>
+              </div>
+              <n-slider v-model:value="video.musicVolume" :min="0" :max="1" :step="0.05" size="small" />
+            </div>
+
+            <!-- Sound Effects -->
+            <div class="mt-4">
+              <div class="flex items-center justify-between text-xs opacity-70 mb-1">
+                <span>Sound effects (music auto-ducks while an effect plays)</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <n-select
+                  v-model:value="sfxPick"
+                  :options="sfxOptions"
+                  placeholder="Add effect…"
+                  size="small"
+                  clearable
+                  class="flex-1"
+                />
+                <n-button size="small" @click="addSfx" :disabled="!sfxPick">
+                  <template #icon><Icon name="ph:plus" /></template>
+                </n-button>
+              </div>
+              <div v-if="(video.soundEffects || []).length" class="mt-2 space-y-1">
+                <div v-for="(sfx, idx) in video.soundEffects" :key="idx" class="flex items-center gap-2 text-xs">
+                  <Icon name="mdi:music-note" class="shrink-0" />
+                  <span class="truncate flex-1">{{ sfx.path.split('/').pop() }}</span>
+                  <n-input-number v-model:value="sfx.startTime" size="tiny" :min="0" :max="600" class="w-20" />
+                  <span class="opacity-50">s</span>
+                  <n-button size="tiny" quaternary @click="video.soundEffects.splice(idx, 1)">
+                    <Icon name="ph:trash" class="text-red-400" />
+                  </n-button>
+                </div>
+              </div>
+              <div class="mt-2 flex items-center justify-between text-xs opacity-70">
+                <span>SFX volume</span>
+                <span>{{ Math.round((video.sfxVolume ?? 0.9) * 100) }}%</span>
+              </div>
+              <n-slider v-model:value="video.sfxVolume" :min="0" :max="1" :step="0.05" size="small" />
+            </div>
           </section>
-          <section class="subtitle dark:bg-slate-800 bg-slate-100 rounded-lg min-h-40 p-5">
+          <section class="subtitle bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl min-h-40 p-5">
             <header class="flex items-center">
               <Icon name="material-symbols:subtitles" size="26" />
               <span class="text-lg ml-2">
@@ -1155,16 +1253,16 @@ function handleStateChange(state: number) {
   </n-spin>
 
   <n-modal v-model:show="settingsModalState" :mask-closable="false" closable @close="settingsModal = 'IDLE'"
-    preset="card" class="max-w-3xl" :content-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
-    :header-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'">
+    preset="card" class="max-w-3xl" :content-class="'bg-white dark:bg-neutral-800 p-6 py-16 text-clipper-ink dark:text-white'"
+    :header-class="'bg-white dark:bg-neutral-800 p-6 py-16 text-clipper-ink dark:text-white'">
     <div class="p-10" v-if="settingsModal !== 'IDLE'">
       <GenerateScript :active-tab="settingsModal" />
     </div>
   </n-modal>
 
   <n-modal v-model:show="SearchModal" :mask-closable="false" closable @close="SearchModal = false" preset="card"
-    class="max-w-3xl" :content-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'"
-    :header-class="'dark:bg-gray-950 p-10 py-16 dark:text-slate-100'">
+    class="max-w-3xl" :content-class="'bg-white dark:bg-neutral-800 p-6 py-16 text-clipper-ink dark:text-white'"
+    :header-class="'bg-white dark:bg-neutral-800 p-6 py-16 text-clipper-ink dark:text-white'">
     <div class="p-10">
       <n-tabs type="line" animated>
         <n-tab-pane name="VIDEO_SEARCH" tab="Search and select" active>
@@ -1196,14 +1294,14 @@ function handleStateChange(state: number) {
     >
       <div class="space-y-4">
         <div v-if="video.finalVideoUrl">
-          <p class="text-sm text-gray-400">
+          <p class="text-sm text-clipper-ink/60 dark:text-white/60">
             Video:
             <span class="text-white">{{ video.lastMetadata?.title || video.finalVideoUrl.split('/').pop() }}</span>
           </p>
         </div>
 
         <div v-if="magicsyncBusinesses.length > 0">
-          <label class="block text-sm text-gray-400 mb-1">Business</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Business</label>
           <n-select
             v-model:value="selectedBusinessId"
             :options="magicsyncBusinesses.map(b => ({ label: b.name, value: b.id }))"
@@ -1213,32 +1311,32 @@ function handleStateChange(state: number) {
         </div>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Date</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Date</label>
           <n-date-picker v-model:value="scheduleDate" type="date" class="w-full" />
         </div>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Time</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Time</label>
           <n-time-picker v-model:value="scheduleTime" class="w-full" />
         </div>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Post Content</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Post Content</label>
           <n-input v-model:value="scheduleContent" type="textarea" :rows="3" placeholder="Post text..." class="w-full" />
         </div>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Title (optional)</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Title (optional)</label>
           <n-input v-model:value="scheduleTitle" placeholder="Video title" class="w-full" />
         </div>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Description (optional)</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Description (optional)</label>
           <n-input v-model:value="scheduleDescription" type="textarea" :rows="2" placeholder="Video description" class="w-full" />
         </div>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">
             Post to
             <span v-if="magicsyncLoading" class="text-xs ml-1">(loading...)</span>
           </label>
@@ -1246,11 +1344,11 @@ function handleStateChange(state: number) {
             <n-spin size="small" />
             Fetching connected accounts...
           </div>
-          <div v-else-if="magicsyncBusinesses.length === 0" class="text-sm text-yellow-400">
+          <div v-else-if="magicsyncBusinesses.length === 0" class="text-sm text-clipper-ink/35 dark:text-white/40">
             No MagicSync businesses configured.
             <NuxtLink to="/settings" class="underline">Add one in Settings</NuxtLink>
           </div>
-          <div v-else-if="uniquePlatforms.length === 0 && !magicsyncLoading" class="text-sm text-yellow-400">
+          <div v-else-if="uniquePlatforms.length === 0 && !magicsyncLoading" class="text-sm text-clipper-ink/35 dark:text-white/40">
             No connected accounts for this business.
           </div>
           <div v-else class="space-y-2">
@@ -1296,7 +1394,7 @@ function handleStateChange(state: number) {
     >
       <div class="space-y-4">
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Select Video</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Select Video</label>
           <n-select
             v-model:value="thumbnailTargetUrl"
             :options="video.selectedVideoUrls.map((v, i) => ({
@@ -1308,7 +1406,7 @@ function handleStateChange(state: number) {
         </div>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Timestamp (seconds)</label>
+          <label class="block text-sm text-clipper-ink/60 dark:text-white/60 mb-1">Timestamp (seconds)</label>
           <n-input-number v-model:value="thumbnailTimestamp" :min="0" :max="300" size="large" class="w-full" />
           <div class="flex gap-1 mt-2">
             <n-button size="tiny" @click="thumbnailTimestamp = 0">0s</n-button>

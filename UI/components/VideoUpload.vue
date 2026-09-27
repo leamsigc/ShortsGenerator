@@ -62,18 +62,21 @@ const uploadFiles = async () => {
 </script>
 
 <template>
-  <div class="container mx-auto px-4 py-8">
-    <h1 class="text-2xl font-bold mb-6">Upload Videos</h1>
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-2xl font-bold text-clipper-ink dark:text-white">Upload Videos</h1>
+      <p class="text-sm text-clipper-ink/60 dark:text-white/60 mt-1">Add local video files as sources</p>
+    </div>
 
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-6">
       <div class="space-y-4">
         <div
-          class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
+          class="border-2 border-dashed border-clipper-ink/12 dark:border-white/10 rounded-xl p-8 text-center cursor-pointer hover:border-clipper-green transition-colors bg-neutral-100 dark:bg-neutral-800"
           @click="fileInput?.click()"
         >
-          <Icon name="mdi:cloud-upload" size="48" class="text-gray-400 mb-2" />
-          <p class="text-gray-600">Click to select videos or drag them here</p>
-          <p class="text-sm text-gray-400 mt-1">MP4, MOV, AVI, MKV, WebM</p>
+          <Icon name="ph:upload-simple" size="40" class="text-clipper-ink/35 dark:text-white/40 mb-2 mx-auto" />
+          <p class="text-sm font-medium text-clipper-ink dark:text-white">Click to select videos or drag them here</p>
+          <p class="text-xs text-clipper-ink/35 dark:text-white/40 mt-1">MP4, MOV, AVI, MKV, WebM</p>
           <input
             ref="fileInput"
             type="file"
@@ -85,10 +88,10 @@ const uploadFiles = async () => {
         </div>
 
         <div v-if="selectedFiles.length > 0" class="mt-4">
-          <h3 class="text-sm font-semibold text-gray-700 mb-2">Selected files ({{ selectedFiles.length }}):</h3>
+          <h3 class="text-sm font-semibold text-clipper-ink dark:text-white mb-2">Selected files ({{ selectedFiles.length }}):</h3>
           <ul class="space-y-1">
-            <li v-for="(file, idx) in selectedFiles" :key="idx" class="text-sm text-gray-600 flex items-center gap-2">
-              <Icon name="mdi:file-video" class="text-blue-500" />
+            <li v-for="(file, idx) in selectedFiles" :key="idx" class="text-sm text-clipper-ink/70 dark:text-white/70 flex items-center gap-2">
+              <Icon name="ph:file-video" size="16" class="text-clipper-ink/40 dark:text-white/40" />
               {{ file.name }} ({{ (file.size / 1024 / 1024).toFixed(1) }} MB)
             </li>
           </ul>
@@ -98,7 +101,7 @@ const uploadFiles = async () => {
           <button
             @click="uploadFiles"
             :disabled="selectedFiles.length === 0 || isUploading"
-            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            class="h-10 px-6 rounded-lg bg-clipper-green text-clipper-ink font-semibold text-sm hover:opacity-90 disabled:opacity-50"
           >
             <span v-if="isUploading">Uploading...</span>
             <span v-else>Upload Videos</span>
@@ -111,8 +114,8 @@ const uploadFiles = async () => {
           v-for="(status, index) in uploadStatus"
           :key="index"
           :class="[
-            'p-4 rounded-lg',
-            status.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            'p-4 rounded-lg border text-sm',
+            status.type === 'success' ? 'bg-clipper-green/10 border-clipper-green/20 text-clipper-ink' : 'bg-neutral-100 dark:bg-neutral-800 border-clipper-ink/08 dark:border-white/08 text-clipper-ink/70 dark:text-white/70'
           ]"
         >
           {{ status.message }}

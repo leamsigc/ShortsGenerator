@@ -27,6 +27,28 @@ const { video } = useVideoSettings();
 
 const templates = ref<SubtitleTemplate[]>([]);
 const aspectRatios = ref<{ value: string; label: string; width: number; height: number }[]>([]);
+
+// Google Fonts — most popular, grouped. Selected font is applied to subtitles.
+const fontFamilies = [
+  { group: "Display / Impact (great for shorts)", fonts: ["Anton", "Bebas Neue", "Archivo Black", "Oswald", "Montserrat ExtraBold"] },
+  { group: "Sans (clean, popular)", fonts: ["Inter", "Roboto", "Open Sans", "Lato", "Poppins", "Montserrat", "Nunito", "Raleway", "Rubik", "Work Sans", "DM Sans", "Manrope"] },
+  { group: "Serif / Mono / Fun", fonts: ["Merriweather", "Playfair Display", "Roboto Mono", "JetBrains Mono", "Comic Neue", "Bangers"] },
+];
+const fontOptions = [
+  { label: "Default (bold_font)", value: "" },
+  ...fontFamilies.flatMap((g) => g.fonts.map((f) => ({ label: f, value: f, group: g.group }))),
+];
+const selectedFont = computed({
+  get: () => video.value.subtitleFont || "",
+  set: (v) => (video.value.subtitleFont = v || ""),
+});
+
+// Load the chosen Google Font in the browser so the preview renders it
+const previewFontHref = computed(() =>
+  selectedFont.value
+    ? `https://fonts.googleapis.com/css2?family=${encodeURIComponent(selectedFont.value).replace(/%20/g, "+")}&display=swap`
+    : ""
+);
 const aspectRatio = computed({
   get: () => video.value.aspectRatio || "9:16",
   set: (v) => (video.value.aspectRatio = v),
@@ -67,6 +89,7 @@ const previewStyle = computed(() => {
     "text-stroke": `${Math.max(1, Math.round(t.stroke_width * scale))}px ${t.stroke_color}`,
     "font-size": `${Math.max(18, Math.round(t.fontsize * scale * 0.35))}px`,
     "font-weight": t.stroke_width >= 4 ? "900" : "700",
+    "font-family": selectedFont.value ? `"${selectedFont.value}", sans-serif` : "inherit",
     "letter-spacing": "0.02em",
     "text-shadow":
       t.stroke_width < 2
@@ -153,10 +176,21 @@ onMounted(async () => {
       </n-form-item>
     </div>
 
-    <div class="rounded-xl border border-slate-700 overflow-hidden bg-slate-900">
-      <div class="px-4 py-2 text-xs uppercase tracking-wide text-slate-400 border-b border-slate-700 flex items-center justify-between">
+    <n-form-item label="Font (Google Fonts)" :show-feedback="false">
+      <n-select
+        v-model:value="selectedFont"
+        :options="fontOptions"
+        size="medium"
+        filterable
+        placeholder="Default (bold_font)"
+      />
+    </n-form-item>
+    <link v-if="previewFontHref" rel="stylesheet" :href="previewFontHref" />
+
+    <div class="rounded-xl border border-clipper-ink/08 dark:border-white/08 overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+      <div class="px-4 py-2 text-xs uppercase tracking-wide text-clipper-ink/60 dark:text-white/60 border-b border-clipper-ink/08 dark:border-white/08 flex items-center justify-between">
         <span>Live Preview</span>
-        <span class="text-slate-500">{{ aspectRatio }} • {{ selectedTemplate?.label }}</span>
+        <span class="text-clipper-ink/35 dark:text-white/40">{{ aspectRatio }} • {{ selectedTemplate?.label }}</span>
       </div>
       <div class="flex items-center justify-center p-4">
         <div
@@ -185,7 +219,7 @@ onMounted(async () => {
           placeholder="Enter your custom subtitle text. Each line is a subtitle segment. Use new lines to split segments."
           :autosize="{ minRows: 3, maxRows: 8 }"
         />
-        <p class="text-xs text-slate-500 mt-2">
+        <p class="text-xs text-clipper-ink/35 dark:text-white/40 mt-2">
           When provided, this text will be used for subtitle timing instead of the script.
           Leave empty to use the generated script.
         </p>
@@ -193,7 +227,7 @@ onMounted(async () => {
     </n-collapse>
 
     <div>
-      <h4 class="text-sm font-bold mb-2 text-slate-300">Templates</h4>
+      <h4 class="text-sm font-bold mb-2 text-clipper-ink dark:text-white">Templates</h4>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         <button
           v-for="t in templates"
@@ -201,8 +235,8 @@ onMounted(async () => {
           type="button"
           class="group relative rounded-lg overflow-hidden border-2 transition-all p-2 text-left"
           :class="subtitleTemplate === t.value
-            ? 'border-blue-500 bg-slate-800'
-            : 'border-slate-700 hover:border-slate-500 bg-slate-900'"
+            ? 'border-clipper-green bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08'
+            : 'border-clipper-ink/08 dark:border-white/08 hover:border-slate-500 bg-neutral-100 dark:bg-neutral-800'"
           @click="subtitleTemplate = t.value"
         >
           <div
@@ -226,11 +260,11 @@ onMounted(async () => {
               Hello World
             </span>
           </div>
-          <div class="text-xs font-bold text-slate-200">{{ t.label }}</div>
-          <div class="text-[10px] text-slate-500 line-clamp-1">{{ t.description }}</div>
+          <div class="text-xs font-bold text-clipper-ink dark:text-white">{{ t.label }}</div>
+          <div class="text-[10px] text-clipper-ink/35 dark:text-white/40 line-clamp-1">{{ t.description }}</div>
           <div
             v-if="subtitleTemplate === t.value"
-            class="absolute top-1 right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center"
+            class="absolute top-1 right-1 w-5 h-5 bg-clipper-green rounded-full flex items-center justify-center"
           >
             <Icon name="mdi:check" size="12" class="text-white" />
           </div>

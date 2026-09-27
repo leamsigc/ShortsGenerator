@@ -1,0 +1,1 @@
+# CLIPPER MCP Server Module

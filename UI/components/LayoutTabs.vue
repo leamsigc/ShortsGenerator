@@ -39,6 +39,12 @@ function getPinnedTabsList() {
       icon: "material-symbols:slow-motion-video-rounded",
     },
     {
+      title: "CLIPPER",
+      fullPath: "/clipper",
+      name: "clipper",
+      icon: "ph:film-strip",
+    },
+    {
       title: "Documentation",
       fullPath: "/docs",
       name: "generate",

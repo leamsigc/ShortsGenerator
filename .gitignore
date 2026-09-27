@@ -38,3 +38,6 @@ skills/**/node_modules/**
 .ig-research
 .twitter-research
 .reddit-research
+.venv
+.venv/*
+.playwright-*

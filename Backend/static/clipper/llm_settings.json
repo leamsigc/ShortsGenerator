@@ -1,0 +1,8 @@
+{
+  "provider": "gemini",
+  "base_url": "",
+  "api_key": "",
+  "model": "",
+  "outline_enabled": true,
+  "g4f_use_cookies": true
+}

@@ -1,1 +1,94 @@
 @use "./helpers/transition";
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --clipper-green: #00DC82;
+    --clipper-ink: #0F172A;
+    --clipper-white: #FFFFFF;
+    --ink-04: rgba(15, 23, 42, 0.04);
+    --ink-06: rgba(15, 23, 42, 0.06);
+    --ink-08: rgba(15, 23, 42, 0.08);
+    --ink-10: rgba(15, 23, 42, 0.10);
+    --ink-12: rgba(15, 23, 42, 0.12);
+    --ink-16: rgba(15, 23, 42, 0.16);
+    --ink-35: rgba(15, 23, 42, 0.35);
+    --ink-60: rgba(15, 23, 42, 0.60);
+    --green-04: rgba(0, 220, 130, 0.04);
+    --green-08: rgba(0, 220, 130, 0.08);
+    --green-16: rgba(0, 220, 130, 0.16);
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --header-height: 64px;
+    --content-max-width: 1440px;
+    --clip-list-width: 300px;
+    --inspector-width: 320px;
+    --transition-fast: 150ms ease;
+    --transition-normal: 200ms ease;
+}
+
+/* Dark theme — inverted Ink/White via CSS variables + color-scheme
+   Tailwind dark: variants still applied, but direct var() usage auto-flips. */
+.dark {
+    --clipper-white: #0F172A;
+    --clipper-ink: #FFFFFF;
+    --ink-04: rgba(255, 255, 255, 0.04);
+    --ink-06: rgba(255, 255, 255, 0.06);
+    --ink-08: rgba(255, 255, 255, 0.08);
+    --ink-10: rgba(255, 255, 255, 0.10);
+    --ink-12: rgba(255, 255, 255, 0.10);
+    --ink-16: rgba(255, 255, 255, 0.16);
+    --ink-35: rgba(255, 255, 255, 0.35);
+    --ink-60: rgba(255, 255, 255, 0.60);
+}
+
+html.dark {
+    color-scheme: dark;
+}
+
+html.dark body {
+    background: #0F172A;
+    color: #FFFFFF;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Poppins', sans-serif;
+}
+
+html,
+body {
+    font-family: 'Poppins', sans-serif;
+    color: var(--clipper-ink);
+    background: var(--clipper-white);
+}
+
+button,
+input,
+textarea,
+select {
+    font-family: inherit;
+}
+
+button {
+    transition:
+        background-color 150ms ease,
+        border-color 150ms ease,
+        opacity 150ms ease;
+}
+
+:focus-visible {
+    outline: 2px solid #00dc82;
+    outline-offset: 2px;
+}

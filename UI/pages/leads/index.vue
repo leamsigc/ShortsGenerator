@@ -603,7 +603,7 @@ onMounted(async () => {
     <!-- ============ SEARCH TAB ============ -->
     <div v-if="activeTab === 'search'">
       <!-- Chrome Connection -->
-      <section class="dark:bg-slate-800 bg-slate-100 rounded-lg p-5 mb-6">
+      <section class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-5 mb-6">
         <h2 class="text-lg font-semibold mb-4">Chrome Connection</h2>
         <div class="flex items-center gap-3 mb-3">
           <label class="text-sm">Port:</label>
@@ -627,7 +627,7 @@ onMounted(async () => {
       </section>
 
       <!-- Search -->
-      <section class="dark:bg-slate-800 bg-slate-100 rounded-lg p-5 mb-6">
+      <section class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-5 mb-6">
         <h2 class="text-lg font-semibold mb-4">Complete Profile Audit</h2>
         <p class="text-xs opacity-60 mb-3">Search a Twitter/X profile to get a full audit: profile analysis, related niche accounts, and AI-powered audience intelligence.</p>
         <div class="flex gap-2 mb-4">
@@ -652,13 +652,13 @@ onMounted(async () => {
       <!-- Audit Results -->
       <section v-if="showAudit && auditedProfile" class="space-y-4 mb-6">
         <!-- Cached indicator -->
-        <div v-if="isCachedResult" class="flex items-center gap-2 text-xs text-purple-400 mb-1">
+        <div v-if="isCachedResult" class="flex items-center gap-2 text-xs text-clipper-ink dark:text-white mb-1">
           <span>● Loaded from cache</span>
           <span class="opacity-50">|</span>
-          <span class="text-blue-400 cursor-pointer hover:underline" @click="searchProfile(true)">Force refresh from server</span>
+          <span class="text-clipper-green cursor-pointer hover:underline" @click="searchProfile(true)">Force refresh from server</span>
         </div>
         <!-- Main Profile Card -->
-        <div class="dark:bg-slate-800 bg-slate-100 rounded-lg p-5 border-l-4 border-blue-500">
+        <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-5 border-l-4 border-clipper-green">
           <div class="flex items-start gap-4">
             <img
               v-if="auditedProfile.avatar_url"
@@ -669,9 +669,9 @@ onMounted(async () => {
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-base font-bold">{{ auditedProfile.display_name || auditedProfile.username }}</span>
-                <span v-if="auditedProfile.is_verified" class="text-blue-500 text-xs">✓</span>
+                <span v-if="auditedProfile.is_verified" class="text-clipper-green text-xs">✓</span>
                 <span class="text-sm opacity-50">@{{ auditedProfile.username }}</span>
-                <span class="px-1.5 py-0.5 text-xs rounded bg-blue-900/30 text-blue-300 border border-blue-800/30 ml-auto">Primary</span>
+                <span class="px-1.5 py-0.5 text-xs rounded bg-blue-900/30 text-clipper-ink/60 dark:text-white/60 border border-blue-800/30 ml-auto">Primary</span>
               </div>
               <p v-if="auditedProfile.bio" class="text-sm opacity-70 mt-1">{{ auditedProfile.bio }}</p>
               <div class="flex gap-4 mt-2 text-sm">
@@ -682,7 +682,7 @@ onMounted(async () => {
                 <a :href="auditedProfile.profile_url" target="_blank"
                   class="px-3 py-1 text-xs bg-slate-200 dark:bg-slate-700 rounded hover:bg-slate-300 dark:hover:bg-slate-600 transition">View Profile</a>
                 <button @click="analyzeProfile(auditedProfile)"
-                  class="px-3 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 transition disabled:opacity-50"
+                  class="px-3 py-1 text-xs bg-clipper-green text-white rounded hover:opacity-90 transition disabled:opacity-50"
                   :disabled="analyzingProfile">
                   {{ analyzingProfile ? 'Analyzing...' : 'AI Audience Analysis' }}
                 </button>
@@ -691,7 +691,7 @@ onMounted(async () => {
                   Add to Campaign
                   <div v-if="showCampaignPicker === auditedProfile.id"
                     @click.stop
-                    class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+                    class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-[#0F172A] border border-clipper-ink/08 dark:border-white/10 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
                     <div v-if="campaigns.length === 0" class="px-3 py-2 text-xs opacity-50">No campaigns yet</div>
                     <button v-for="c in campaigns" :key="c.id"
                       @click.stop="addToCampaign(auditedProfile, c.id)"
@@ -707,15 +707,15 @@ onMounted(async () => {
         </div>
 
         <!-- AI Profile Analysis -->
-        <div v-if="showAnalysis && profileAnalysis" class="dark:bg-slate-800 bg-slate-100 rounded-lg p-5 border-l-4 border-purple-500">
+        <div v-if="showAnalysis && profileAnalysis" class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-5 border-l-4 border-clipper-ink/12 dark:border-white/10">
           <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-purple-400">AI Audience Intelligence</h3>
+            <h3 class="font-semibold text-clipper-ink dark:text-white">AI Audience Intelligence</h3>
             <button @click="showAnalysis = false" class="text-xs opacity-50 hover:opacity-100">Close</button>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <h4 class="text-xs font-semibold text-purple-400 mb-1">Audience Demographics</h4>
+              <h4 class="text-xs font-semibold text-clipper-ink dark:text-white mb-1">Audience Demographics</h4>
               <p class="text-xs opacity-80">{{ profileAnalysis.audience_demographics }}</p>
             </div>
             <div>
@@ -727,9 +727,9 @@ onMounted(async () => {
               <p class="text-xs opacity-80">{{ profileAnalysis.recommended_outreach }}</p>
             </div>
             <div v-if="profileAnalysis.content_themes.length">
-              <h4 class="text-xs font-semibold text-blue-400 mb-1">Content Themes</h4>
+              <h4 class="text-xs font-semibold text-clipper-green mb-1">Content Themes</h4>
               <div class="flex flex-wrap gap-1">
-                <span v-for="t in profileAnalysis.content_themes" :key="t" class="px-1.5 py-0.5 text-xs rounded bg-blue-900/30 text-blue-300 border border-blue-800/30">{{ t }}</span>
+                <span v-for="t in profileAnalysis.content_themes" :key="t" class="px-1.5 py-0.5 text-xs rounded bg-blue-900/30 text-clipper-ink/60 dark:text-white/60 border border-blue-800/30">{{ t }}</span>
               </div>
             </div>
             <div v-if="profileAnalysis.competitor_overlap.length">
@@ -746,8 +746,8 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        <div v-else-if="analyzingProfile" class="dark:bg-slate-800 bg-slate-100 rounded-lg p-5 flex items-center gap-2 text-sm opacity-60">
-          <span class="inline-block w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></span>
+        <div v-else-if="analyzingProfile" class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-5 flex items-center gap-2 text-sm opacity-60">
+          <span class="inline-block w-3 h-3 border-2 border-clipper-ink/12 dark:border-white/10 border-t-transparent rounded-full animate-spin"></span>
           Analyzing profile with AI...
         </div>
 
@@ -759,13 +759,13 @@ onMounted(async () => {
           </div>
           <div class="space-y-2">
             <div v-for="lead in relatedUsers" :key="lead.id"
-              class="dark:bg-slate-800 bg-slate-100 rounded-lg p-3 flex items-center gap-3 border border-slate-700/30">
+              class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-3 flex items-center gap-3 border border-clipper-ink/08 dark:border-white/08/30">
               <img v-if="lead.avatar_url" :src="lead.avatar_url" class="w-9 h-9 rounded-full flex-shrink-0" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
-                  <Icon :name="platformIcon(lead.platform)" class="text-blue-400" size="14" />
+                  <Icon :name="platformIcon(lead.platform)" class="text-clipper-green" size="14" />
                   <span class="text-sm font-medium">{{ lead.display_name || lead.username }}</span>
-                  <span v-if="lead.is_verified" class="text-blue-500 text-xs">✓</span>
+                  <span v-if="lead.is_verified" class="text-clipper-green text-xs">✓</span>
                   <span class="text-xs opacity-50">@{{ lead.username }}</span>
                 </div>
                 <p v-if="lead.bio" class="text-xs opacity-60 mt-0.5 line-clamp-1">{{ lead.bio }}</p>
@@ -778,7 +778,7 @@ onMounted(async () => {
                   +
                   <div v-if="showCampaignPicker === lead.id"
                     @click.stop
-                    class="absolute top-full right-0 mt-1 w-52 bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-lg shadow-xl z-50 max-h-40 overflow-y-auto">
+                    class="absolute top-full right-0 mt-1 w-52 bg-white dark:bg-[#0F172A] border border-clipper-ink/08 dark:border-white/10 rounded-lg shadow-xl z-50 max-h-40 overflow-y-auto">
                     <div v-if="campaigns.length === 0" class="px-3 py-2 text-xs opacity-50">No campaigns</div>
                     <button v-for="c in campaigns" :key="c.id"
                       @click.stop="addToCampaign(lead, c.id)"
@@ -798,11 +798,11 @@ onMounted(async () => {
     <div v-if="activeTab === 'campaigns'">
       <!-- Campaign Detail View -->
       <div v-if="selectedCampaign">
-        <button @click="backToCampaigns" class="text-sm text-blue-400 hover:text-blue-300 mb-4 flex items-center gap-1">
+        <button @click="backToCampaigns" class="text-sm text-clipper-green hover:text-clipper-ink/60 dark:text-white/60 mb-4 flex items-center gap-1">
           ← Back to campaigns
         </button>
 
-        <div class="dark:bg-slate-800 bg-slate-100 rounded-lg p-6 mb-6">
+        <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-6 mb-6">
           <div class="flex items-start justify-between mb-4">
             <div>
               <h2 class="text-xl font-bold">{{ selectedCampaign.name }}</h2>
@@ -822,7 +822,7 @@ onMounted(async () => {
             <h3 class="text-sm font-semibold mb-1.5">Keywords</h3>
             <div class="flex flex-wrap gap-1.5">
               <span v-for="kw in selectedCampaign.keywords" :key="kw"
-                class="px-2 py-0.5 text-xs rounded bg-blue-900/30 text-blue-300 border border-blue-800/30">{{ kw }}</span>
+                class="px-2 py-0.5 text-xs rounded bg-blue-900/30 text-clipper-ink/60 dark:text-white/60 border border-blue-800/30">{{ kw }}</span>
             </div>
           </div>
 
@@ -835,7 +835,7 @@ onMounted(async () => {
           </div>
 
           <div v-if="selectedCampaign.target_audience" class="mb-4">
-            <h3 class="text-sm font-semibold mb-1 text-purple-400">Target Audience</h3>
+            <h3 class="text-sm font-semibold mb-1 text-clipper-ink dark:text-white">Target Audience</h3>
             <p class="text-sm opacity-80">{{ selectedCampaign.target_audience }}</p>
           </div>
 
@@ -843,7 +843,7 @@ onMounted(async () => {
             <h3 class="text-sm font-semibold mb-1.5 text-amber-400">Intent-Based Search Queries</h3>
             <div class="space-y-1">
               <div v-for="(q, i) in selectedCampaign.intent_queries" :key="i"
-                class="text-xs opacity-70 font-mono bg-slate-900/30 rounded px-2 py-1">"{{ q }}"</div>
+                class="text-xs opacity-70 font-mono bg-neutral-100 dark:bg-neutral-800 rounded px-2 py-1">"{{ q }}"</div>
             </div>
           </div>
 
@@ -874,7 +874,7 @@ onMounted(async () => {
           </div>
 
           <!-- Active Competitor Tracking -->
-          <div class="border-t dark:border-slate-700 border-slate-300 pt-4 mt-4">
+          <div class="border-t dark:border-clipper-ink/08 dark:border-white/08 border-slate-300 pt-4 mt-4">
             <h3 class="font-semibold mb-3 flex items-center gap-2">
               Tracked Competitors
               <span class="text-xs opacity-50">({{ selectedCampaign.competitors?.length || 0 }})</span>
@@ -885,12 +885,12 @@ onMounted(async () => {
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-1.5">
                     <span class="text-sm font-medium text-red-300">{{ comp.name }}</span>
-                    <a v-if="comp.url" :href="comp.url" target="_blank" class="text-xs text-blue-400">↗</a>
+                    <a v-if="comp.url" :href="comp.url" target="_blank" class="text-xs text-clipper-green">↗</a>
                   </div>
                   <div v-if="comp.analysis" class="text-xs opacity-70 mt-1 space-y-0.5">
                     <p v-if="comp.analysis.content_strategy"><span class="text-amber-400">Strategy:</span> {{ comp.analysis.content_strategy }}</p>
                     <p v-if="comp.analysis.steal_play"><span class="text-green-400">Steal play:</span> {{ comp.analysis.steal_play }}</p>
-                    <p v-if="comp.analysis.estimated_reach"><span class="text-purple-400">Reach:</span> {{ comp.analysis.estimated_reach }}</p>
+                    <p v-if="comp.analysis.estimated_reach"><span class="text-clipper-ink dark:text-white">Reach:</span> {{ comp.analysis.estimated_reach }}</p>
                     <div v-if="comp.analysis.likely_platforms?.length" class="flex gap-1 mt-1">
                       <span v-for="p in comp.analysis.likely_platforms" :key="p"
                         class="px-1 py-0.5 text-xs rounded bg-slate-700/50">{{ p }}</span>
@@ -916,7 +916,7 @@ onMounted(async () => {
           </div>
 
           <!-- Viral Post Monitor -->
-          <div class="border-t dark:border-slate-700 border-slate-300 pt-4 mt-4">
+          <div class="border-t dark:border-clipper-ink/08 dark:border-white/08 border-slate-300 pt-4 mt-4">
             <h3 class="font-semibold mb-3 flex items-center gap-2">
               Viral Post Monitor
               <span class="text-xs opacity-50">({{ selectedCampaign.viral_posts?.length || 0 }})</span>
@@ -928,7 +928,7 @@ onMounted(async () => {
                 <div v-if="vp.analysis" class="text-xs opacity-70 space-y-1 mt-1.5 pt-1.5 border-t border-pink-800/20">
                   <p v-if="vp.analysis.viral_hook"><span class="text-pink-400">Hook:</span> {{ vp.analysis.viral_hook }}</p>
                   <p v-if="vp.analysis.replication_angle"><span class="text-green-400">Replicate:</span> {{ vp.analysis.replication_angle }}</p>
-                  <p v-if="vp.analysis.suggested_reply"><span class="text-blue-400">Reply:</span> {{ vp.analysis.suggested_reply }}</p>
+                  <p v-if="vp.analysis.suggested_reply"><span class="text-clipper-green">Reply:</span> {{ vp.analysis.suggested_reply }}</p>
                   <div v-if="vp.analysis.improved_version" class="mt-2 bg-green-900/20 border border-green-700/30 rounded p-2">
                     <span class="text-green-400 font-semibold">Improved version:</span>
                     <p class="text-green-200/90 mt-0.5">{{ vp.analysis.improved_version }}</p>
@@ -937,7 +937,7 @@ onMounted(async () => {
                     <span class="px-1 py-0.5 text-xs rounded bg-pink-900/30 text-pink-300">{{ vp.analysis.format }}</span>
                   </div>
                 </div>
-                <a v-if="vp.post_url" :href="vp.post_url" target="_blank" class="text-xs text-blue-400 mt-1 inline-block">View Post →</a>
+                <a v-if="vp.post_url" :href="vp.post_url" target="_blank" class="text-xs text-clipper-green mt-1 inline-block">View Post →</a>
               </div>
             </div>
             <div class="space-y-2">
@@ -957,21 +957,21 @@ onMounted(async () => {
           </div>
 
           <!-- Find Leads / Engagement CTA -->
-          <div class="border-t dark:border-slate-700 border-slate-300 pt-4 mt-4 space-y-2">
+          <div class="border-t dark:border-clipper-ink/08 dark:border-white/08 border-slate-300 pt-4 mt-4 space-y-2">
             <div class="flex items-center gap-2">
               <button @click="searchCampaignLeads('leads')"
                 :disabled="searchingLeads"
-                class="flex-1 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-lg text-sm font-semibold hover:from-amber-600 hover:to-orange-700 disabled:opacity-50 transition flex items-center justify-center gap-2">
+                class="flex-1 px-4 py-2.5 bg-clipper-green">
                 <span v-if="searchingLeads && searchMode === 'leads'" class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
                 {{ searchingLeads && searchMode === 'leads' ? 'GPT generating best queries...' : campaignLeads.length === 0 ? '🎯 Find Leads — Search & Auto-Add' : '🎯 Find More Leads' }}
               </button>
               <button @click="searchCampaignLeads('engagement')"
                 :disabled="searchingLeads"
-                class="flex-1 px-4 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-lg text-sm font-semibold hover:from-teal-600 hover:to-emerald-700 disabled:opacity-50 transition flex items-center justify-center gap-2">
+                class="flex-1 px-4 py-2.5 bg-clipper-green">
                 <span v-if="searchingLeads && searchMode === 'engagement'" class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
                 {{ searchingLeads && searchMode === 'engagement' ? 'GPT finding conversations...' : '💬 Find Posts to Engage With' }}
               </button>
-              <span v-if="showLeadSearchResults && searchResultsPosts.length" title="Cached results loaded from IndexedDB" class="text-xs text-purple-400 flex-shrink-0">● cached</span>
+              <span v-if="showLeadSearchResults && searchResultsPosts.length" title="Cached results loaded from IndexedDB" class="text-xs text-clipper-ink dark:text-white flex-shrink-0">● cached</span>
             </div>
             <p v-if="leadSearchError" class="text-red-500 text-xs mt-2">{{ leadSearchError }}</p>
             <div class="flex gap-2">
@@ -991,7 +991,7 @@ onMounted(async () => {
             <span class="text-xs font-semibold text-teal-400 bg-teal-900/20 px-2 py-0.5 rounded">Engagement Mode</span>
             <span class="text-xs opacity-60">GPT optimized queries to find conversations to join, not leads to collect</span>
           </div>
-          <div v-if="searchResultsPosts.some((p: any) => p._gpt_generated)" class="bg-purple-900/20 border border-purple-700/30 rounded-lg p-3 text-xs text-purple-300 mb-3 flex items-center gap-2">
+          <div v-if="searchResultsPosts.some((p: any) => p._gpt_generated)" class="bg-neutral-100 dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-lg p-3 text-xs text-clipper-ink/60 dark:text-white/60 mb-3 flex items-center gap-2">
             <Icon name="mdi:robot-outline" size="16" />
             <span>Real-time search returned no results. These AI-generated leads are based on your campaign context — scored and qualified by GPT.</span>
           </div>
@@ -999,7 +999,7 @@ onMounted(async () => {
           <div v-if="searchResultsPosts.length">
             <h2 class="text-lg font-semibold mb-3">{{ searchMode === 'engagement' ? 'Conversations to Join' : 'Posts Found' }} ({{ searchResultsPosts.length }})</h2>
             <div v-for="(post, i) in searchResultsPosts" :key="i"
-              class="dark:bg-slate-800 bg-slate-100 rounded-lg p-4 mb-3 border-l-4 border-amber-500">
+              class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-4 mb-3 border-l-4 border-clipper-ink/12 dark:border-white/10">
               <div class="flex items-start gap-3">
                 <img v-if="post.avatar_url" :src="post.avatar_url" class="w-9 h-9 rounded-full flex-shrink-0" />
                 <div class="flex-1 min-w-0">
@@ -1011,25 +1011,25 @@ onMounted(async () => {
                       :class="['px-1.5 py-0.5 text-[10px] rounded font-semibold ml-auto',
                         post.qualification.score >= 8 ? 'bg-green-900/40 text-green-300' :
                         post.qualification.score >= 5 ? 'bg-amber-900/40 text-amber-300' :
-                        'bg-slate-700/40 text-slate-400']">
+                        'bg-neutral-100 dark:bg-neutral-800 text-clipper-ink/60 dark:text-white/60']">
                       {{ post.qualification.score }}/10 · {{ post.qualification.classification?.replace('_', ' ') }}
                     </span>
                     <span v-if="post._gpt_generated"
-                      class="px-1 py-0.5 text-[10px] rounded bg-purple-900/30 text-purple-300">AI generated</span>
+                      class="px-1 py-0.5 text-[10px] rounded bg-clipper-green/10 text-clipper-ink/60 dark:text-white/60">AI generated</span>
                   </div>
                   <p v-if="post.qualification?.reason" class="text-[11px] opacity-50 italic mb-1">{{ post.qualification.reason }}</p>
                   <p class="text-sm opacity-80 mb-2">{{ post.post_text || post.text }}</p>
                   <a v-if="post.post_url" :href="post.post_url" target="_blank"
-                    class="text-xs text-blue-400 hover:text-blue-300">View Post →</a>
+                    class="text-xs text-clipper-green hover:text-clipper-ink/60 dark:text-white/60">View Post →</a>
                 </div>
               </div>
               <!-- GPT Engagement Suggestion -->
-              <div v-if="engagementSuggestions[i]" class="mt-3 pt-3 border-t dark:border-slate-700 border-slate-300">
+              <div v-if="engagementSuggestions[i]" class="mt-3 pt-3 border-t dark:border-clipper-ink/08 dark:border-white/08 border-slate-300">
                 <div class="flex items-center gap-1.5 mb-1.5">
-                  <span class="text-xs font-semibold text-purple-400">AI Engagement Suggestion</span>
-                  <Icon name="mdi:robot-outline" class="text-purple-400" size="14" />
+                  <span class="text-xs font-semibold text-clipper-ink dark:text-white">AI Engagement Suggestion</span>
+                  <Icon name="mdi:robot-outline" class="text-clipper-ink dark:text-white" size="14" />
                 </div>
-                <div class="text-xs opacity-80 whitespace-pre-wrap bg-purple-900/10 rounded p-2.5 border border-purple-800/20">
+                <div class="text-xs opacity-80 whitespace-pre-wrap bg-clipper-green/[0.04] rounded p-2.5 border border-clipper-ink/08 dark:border-white/08">
                   {{ engagementSuggestions[i] }}
                 </div>
               </div>
@@ -1040,22 +1040,22 @@ onMounted(async () => {
           <div v-if="searchResultsProfiles.length && searchMode === 'leads'">
             <h2 class="text-lg font-semibold mb-3">Profiles Added ({{ searchResultsProfiles.length }})</h2>
             <div v-for="lead in searchResultsProfiles" :key="lead.id"
-              class="dark:bg-slate-800 bg-slate-100 rounded-lg p-3 flex items-center gap-3 border border-slate-700/30">
+              class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-3 flex items-center gap-3 border border-clipper-ink/08 dark:border-white/08/30">
               <img v-if="lead.avatar_url" :src="lead.avatar_url" class="w-9 h-9 rounded-full flex-shrink-0" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
-                  <Icon :name="platformIcon(lead.platform)" class="text-blue-400" size="14" />
+                  <Icon :name="platformIcon(lead.platform)" class="text-clipper-green" size="14" />
                   <span class="text-sm font-medium">{{ lead.display_name || lead.username }}</span>
                   <span class="text-xs opacity-50">@{{ lead.username }}</span>
                 </div>
                 <p v-if="lead.bio" class="text-xs opacity-60 mt-0.5 line-clamp-1">{{ lead.bio }}</p>
               </div>
               <a v-if="lead.profile_url" :href="lead.profile_url" target="_blank"
-                class="text-xs text-blue-400 hover:text-blue-300 flex-shrink-0">View</a>
+                class="text-xs text-clipper-green hover:text-clipper-ink/60 dark:text-white/60 flex-shrink-0">View</a>
             </div>
           </div>
 
-          <div v-if="!searchResultsPosts.length && !searchingLeads" class="dark:bg-slate-800 bg-slate-100 rounded-lg p-6 text-center text-sm opacity-50">
+          <div v-if="!searchResultsPosts.length && !searchingLeads" class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-6 text-center text-sm opacity-50">
             {{ searchMode === 'engagement' ? 'No conversations found. Try again or check Chrome connection.' : 'No results found. Try different keywords or check Chrome connection.' }}
           </div>
         </section>
@@ -1074,11 +1074,11 @@ onMounted(async () => {
           <div v-if="loadingCampaignDetail" class="text-sm opacity-50 py-4">Loading leads...</div>
           <div v-else-if="campaignLeads.length">
             <div v-for="lead in campaignLeads" :key="lead.id"
-              class="dark:bg-slate-800 bg-slate-100 rounded-lg p-4 mb-2 flex gap-3 items-start">
+              class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-4 mb-2 flex gap-3 items-start">
               <img v-if="lead.avatar_url" :src="lead.avatar_url" class="w-10 h-10 rounded-full flex-shrink-0" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
-                  <Icon :name="platformIcon(lead.platform)" class="text-blue-400" size="14" />
+                  <Icon :name="platformIcon(lead.platform)" class="text-clipper-green" size="14" />
                   <span class="text-sm font-medium">{{ lead.display_name || lead.username }}</span>
                   <span class="text-xs opacity-50">@{{ lead.username }}</span>
                 </div>
@@ -1089,7 +1089,7 @@ onMounted(async () => {
                 </div>
               </div>
               <a v-if="lead.profile_url" :href="lead.profile_url" target="_blank"
-                class="text-xs text-blue-400 hover:text-blue-300 flex-shrink-0">View</a>
+                class="text-xs text-clipper-green hover:text-clipper-ink/60 dark:text-white/60 flex-shrink-0">View</a>
             </div>
           </div>
           <p v-else class="text-sm opacity-50 text-center py-6">No leads yet. Click "Find Leads" above to search and auto-add from the campaign's keywords.</p>
@@ -1098,7 +1098,7 @@ onMounted(async () => {
 
       <!-- Campaign List View -->
       <div v-else>
-        <section class="dark:bg-slate-800 bg-slate-100 rounded-lg p-6 mb-6">
+        <section class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-6 mb-6">
           <h2 class="text-lg font-semibold mb-4">Create Campaign</h2>
           <p class="text-xs opacity-60 mb-3">Describe what you offer — AI will generate keywords, audience analysis, and search strategies.</p>
 
@@ -1124,7 +1124,7 @@ onMounted(async () => {
 
             <!-- Website Scraping -->
             <details class="text-sm">
-              <summary class="cursor-pointer text-blue-400 hover:text-blue-300 font-medium">+ Add website URL for richer AI analysis</summary>
+              <summary class="cursor-pointer text-clipper-green hover:text-clipper-ink/60 dark:text-white/60 font-medium">+ Add website URL for richer AI analysis</summary>
               <div class="mt-2 space-y-2">
                 <div class="flex gap-2">
                   <input v-model="websiteUrl" type="url"
@@ -1157,24 +1157,24 @@ onMounted(async () => {
             <button
               @click="enrichCampaign"
               :disabled="enriching || !newCampaignDescription.trim()"
-              class="w-full px-4 py-2 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 disabled:opacity-50 transition"
+              class="w-full px-4 py-2 bg-clipper-green text-white rounded text-sm hover:opacity-90 disabled:opacity-50 transition"
             >
               {{ enriching ? 'Analyzing with AI...' : 'AI-Generate Campaign Strategy' }}
             </button>
 
-            <div v-if="showEnrichment && enrichmentResult" class="border border-purple-800/30 rounded-lg p-4 space-y-3 bg-purple-900/10">
+            <div v-if="showEnrichment && enrichmentResult" class="border border-clipper-ink/08 dark:border-white/08 rounded-lg p-4 space-y-3 bg-clipper-green/[0.04]">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-purple-400">AI Campaign Strategy</span>
+                <span class="text-sm font-semibold text-clipper-ink dark:text-white">AI Campaign Strategy</span>
                 <span class="text-xs opacity-50">refine below then create</span>
               </div>
 
               <div>
-                <label class="text-xs text-purple-400 block mb-1">Suggested Name</label>
+                <label class="text-xs text-clipper-ink dark:text-white block mb-1">Suggested Name</label>
                 <p class="text-sm font-medium">{{ enrichmentResult.refined_name }}</p>
               </div>
 
               <div>
-                <label class="text-xs text-purple-400 block mb-1">Keywords</label>
+                <label class="text-xs text-clipper-ink dark:text-white block mb-1">Keywords</label>
                 <input v-model="campaignKeywords" type="text"
                   class="w-full px-2 py-1 rounded border dark:bg-slate-700 dark:border-slate-600 text-sm"
                   placeholder="Comma-separated keywords" />
@@ -1194,7 +1194,7 @@ onMounted(async () => {
               </div>
 
               <div>
-                <label class="text-xs text-blue-400 block mb-1">Audience Capture Strategy</label>
+                <label class="text-xs text-clipper-green block mb-1">Audience Capture Strategy</label>
                 <p class="text-xs opacity-80">{{ enrichmentResult.steal_audience_angle }}</p>
               </div>
 
@@ -1221,13 +1221,13 @@ onMounted(async () => {
           <div v-if="loadingCampaigns" class="text-sm opacity-50 py-4">Loading campaigns...</div>
           <div v-else-if="campaigns.length" class="space-y-3">
             <div v-for="c in campaigns" :key="c.id"
-              class="dark:bg-slate-800 bg-slate-100 rounded-lg p-4 hover:ring-1 hover:ring-blue-500/30 cursor-pointer transition"
+              class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-4 hover:ring-1 hover:border-clipper-ink/16 dark:hover:border-white/15 cursor-pointer transition"
               @click="viewCampaign(c)">
               <div class="flex items-start justify-between">
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2">
                     <div class="flex -space-x-1">
-                      <Icon v-for="p in (c.platforms || [c.platform]).slice(0, 3)" :key="p" :name="platformIcon(p)" class="text-blue-400" size="16" />
+                      <Icon v-for="p in (c.platforms || [c.platform]).slice(0, 3)" :key="p" :name="platformIcon(p)" class="text-clipper-green" size="16" />
                       <span v-if="(c.platforms || [c.platform]).length > 3" class="text-[10px] opacity-50 ml-1">+{{ (c.platforms || [c.platform]).length - 3 }}</span>
                     </div>
                     <span class="font-semibold">{{ c.name }}</span>
@@ -1241,8 +1241,8 @@ onMounted(async () => {
                   </div>
                   <div class="flex flex-wrap gap-1 mt-1.5">
                     <span v-for="kw in c.keywords.slice(0, 5)" :key="kw"
-                      class="px-1.5 py-0.5 text-xs rounded bg-slate-700/30 text-slate-300">{{ kw }}</span>
-                    <span v-if="c.keywords.length > 5" class="px-1.5 py-0.5 text-xs rounded bg-slate-700/30 text-slate-400">+{{ c.keywords.length - 5 }}</span>
+                      class="px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800 text-clipper-ink dark:text-white">{{ kw }}</span>
+                    <span v-if="c.keywords.length > 5" class="px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800 text-clipper-ink/60 dark:text-white/60">+{{ c.keywords.length - 5 }}</span>
                   </div>
                 </div>
                 <button @click.stop="deleteCampaign(c.id)"
