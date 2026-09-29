@@ -10,7 +10,13 @@ const message = useMessage()
 import { useStorage } from "@vueuse/core"
 
 const activeClip = computed(() => clipperStore.activeClip)
-const videoEl = ref<HTMLVideoElement | null>(null)
+// Handle to the controlled segment preview (play/pause/seek exposed by ClipPreview).
+interface PreviewHandle {
+  play: () => void
+  pause: () => void
+  seek: (t: number) => void
+}
+const previewRef = ref<PreviewHandle | null>(null)
 const currentTime = ref(activeClip.value?.start_time || 0)
 const videoDuration = ref(0)
 const clipStart = ref(activeClip.value?.start_time || 0)
@@ -21,15 +27,12 @@ const busy = ref(false)
 const videoSrc = computed(() => {
   if (renderedOutputUrl.value) return renderedOutputUrl.value
   if (!activeClip.value) return ""
-  const base = clipperStore.clipVideoUrl(activeClip.value!.id)
-  // Use media fragment to hint browser to load only the viral segment — minimal AI philosophy: no extra render for preview
-  const start = activeClip.value.start_time ?? 0
-  const end = activeClip.value.end_time ?? 0
-  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-    // #t=start,end is supported by most browsers for MP4 range requests (falls back to full video if ignored)
-    return `${base}#t=${start.toFixed(2)},${end.toFixed(2)}`
-  }
-  return base
+  // Stream the full source (Range-supported). The clip segment is enforced
+  // in JS: seek to clipStart on load + loop between clipStart/clipEnd.
+  // NOTE: no `#t=` media fragment — fragments reset video.currentTime to a
+  // segment-relative clock in some browsers, which desyncs the timeline
+  // (absolute source timestamps) from the preview playhead.
+  return clipperStore.clipVideoUrl(activeClip.value!.id)
 })
 
 // — Aspect ratio (user-selected; wins over format presets on render) —
@@ -81,27 +84,28 @@ const currentWord = computed(() => {
   return idx === -1 ? "" : words[idx].word
 })
 
-const onLoadedMeta = () => {
-  videoDuration.value = videoEl.value?.duration || 0
-  videoEl.value!.currentTime = clipStart.value
+// The preview owns the <video> element: it seeks to the segment start on
+// load and loops inside the trim region. Here we only mirror its state so
+// captions, the timeline playhead and split position stay in sync.
+const onPreviewMeta = (dur: number) => {
+  // The streamed source can report 0 until Range data arrives — fall back
+  // to the clip end so the timeline still maps correctly.
+  videoDuration.value = dur > 0 ? dur : (activeClip.value?.end_time || clipEnd.value || 1)
+  currentTime.value = clipStart.value
 }
-const onTime = () => {
-  currentTime.value = videoEl.value?.currentTime || 0
-  if (isPlaying.value && (videoEl.value?.currentTime || 0) >= clipEnd.value) {
-    videoEl.value!.currentTime = clipStart.value
-  }
+const onPreviewTime = (t: number) => {
+  currentTime.value = t
 }
 const seek = (t: number) => {
-  videoEl.value!.currentTime = Math.max(clipStart.value, Math.min(t, clipEnd.value))
-  currentTime.value = videoEl.value!.currentTime
+  const target = Math.max(clipStart.value, Math.min(t, Math.max(clipStart.value + 0.05, clipEnd.value - 0.02)))
+  previewRef.value?.seek(target)
+  currentTime.value = target
+  // If the user seeks while paused on the last frame, keep it paused there.
 }
 const togglePlay = () => {
-  const v = videoEl.value
-  if (!v) return
-  if (v.paused) {
-    if (v.currentTime < clipStart.value || v.currentTime >= clipEnd.value) v.currentTime = clipStart.value
-    v.play(); isPlaying.value = true
-  } else { v.pause(); isPlaying.value = false }
+  // isPlaying mirrors the preview's play/pause events below.
+  if (isPlaying.value) previewRef.value?.pause()
+  else previewRef.value?.play()
 }
 const saveTrim = async () => {
   if (!activeClip.value) return
@@ -284,6 +288,10 @@ watch(() => clipperStore.activeClipId, () => {
   clipEnd.value = c?.end_time || 0
   currentTime.value = c?.start_time || 0
   videoDuration.value = 0
+  // A render belongs to its clip — drop it so the newly selected clip
+  // previews its own source segment instead of the previous clip's output.
+  renderedOutput.value = null
+  isPlaying.value = false
 })
 </script>
 
@@ -307,11 +315,18 @@ watch(() => clipperStore.activeClipId, () => {
     <div v-if="activeClip" class="space-y-4 min-w-0">
       <div class="relative flex justify-center">
         <ClipperClipPreview
+          ref="previewRef"
           :src="videoSrc"
+          :start-time="clipStart"
+          :end-time="clipEnd"
           :hook-title="activeClip.hook_title"
           :caption="caption.replace(currentWord, '')"
           :accent="currentWord"
           :aspect-ratio="selectedAspect"
+          @loadedmetadata="onPreviewMeta"
+          @timeupdate="onPreviewTime"
+          @play="isPlaying = true"
+          @pause="isPlaying = false"
         />
         <n-button
           ghost

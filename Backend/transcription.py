@@ -59,7 +59,7 @@ def _parse_srt_time(time_str: str) -> float:
         return 0.0
 
 
-def parse_srt_file(srt_path: str, video_path: str = "") -> Transcript:
+def parse_srt_file(srt_path: str, video_path: str = "", language: Optional[str] = None) -> Transcript:
     """Parse a user-provided .srt file into a Transcript.
 
     Sentence timings come directly from the SRT cues; word-level timings
@@ -121,6 +121,7 @@ def parse_srt_file(srt_path: str, video_path: str = "") -> Transcript:
         ])
     )
 
+    srt_lang = normalize_transcription_language(language) or "en"
     return Transcript(
         video_url=video_path,
         duration=duration,
@@ -128,8 +129,24 @@ def parse_srt_file(srt_path: str, video_path: str = "") -> Transcript:
         sentences=sentences,
         topics=[],
         i_words=i_words,
-        engagement_signals={"pause_count": 0, "source": "srt"},
+        engagement_signals={"pause_count": 0, "source": "srt", "language": srt_lang},
+        language=srt_lang,
     )
+
+
+def normalize_transcription_language(language: Optional[str]) -> Optional[str]:
+    """Normalize a UI/API language value to a faster-whisper `language` arg.
+
+    "auto" (the UI default), "" and None all mean auto-detect → None, so
+    Whisper transcribes in the video's own language instead of forcing
+    English. Anything else is lower-cased and passed through (e.g. "es").
+    """
+    if language is None:
+        return None
+    lang = str(language).strip().lower()
+    if lang in ("", "auto", "detect", "automatic"):
+        return None
+    return lang
 
 
 def transcribe_video_local(
@@ -140,6 +157,8 @@ def transcribe_video_local(
     """Local transcription using faster-whisper (default and recommended).
 
     Produces word-level timestamps and sentences with accurate timing.
+    `language=None` (or "auto") auto-detects the video's language so
+    subtitles match the spoken audio; pass an ISO 639-1 code to force one.
     Raises NoSpeechDetected when the audio has no speech, and
     TranscriptionError when the pipeline itself fails.
     """
@@ -147,6 +166,7 @@ def transcribe_video_local(
         raise TranscriptionError(f"Video file not found: {video_path}")
 
     model_size = model_size or os.getenv("WHISPER_MODEL", "base")
+    whisper_lang = normalize_transcription_language(language)
 
     try:
         model = _get_whisper_model(model_size)
@@ -156,13 +176,16 @@ def transcribe_video_local(
     try:
         segments, info = model.transcribe(
             video_path,
-            language=language or None,
+            language=whisper_lang,
             word_timestamps=True,
             vad_filter=True,
             beam_size=5,
         )
     except Exception as e:
         raise TranscriptionError(f"Whisper transcription failed: {e}")
+
+    detected_language = getattr(info, "language", None) or whisper_lang or "en"
+    language_probability = float(getattr(info, "language_probability", 0.0) or 0.0)
 
     words: List[WordTimestamp] = []
     sentences: List[SentenceTimestamp] = []
@@ -207,5 +230,7 @@ def transcribe_video_local(
         sentences=sentences,
         topics=[],
         i_words=i_words,
-        engagement_signals={"pause_count": 0},
+        engagement_signals={"pause_count": 0, "language": detected_language, "language_probability": language_probability},
+        language=detected_language,
+        language_probability=language_probability,
     )

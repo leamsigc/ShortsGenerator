@@ -34,6 +34,10 @@ class Transcript:
     engagement_signals: Dict[str, Any] = field(default_factory=dict)
     cached_at: Optional[str] = None
     outline: List[Dict[str, Any]] = field(default_factory=list)
+    # ISO 639-1 code detected (or requested) at transcription time, e.g. "es".
+    # "auto" is never stored — it resolves to the detected code (or "en" fallback).
+    language: str = "en"
+    language_probability: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -46,6 +50,8 @@ class Transcript:
             "engagement_signals": self.engagement_signals,
             "cached_at": self.cached_at or datetime.utcnow().isoformat(),
             "outline": self.outline,
+            "language": self.language,
+            "language_probability": self.language_probability,
         }
 
     @classmethod
@@ -77,6 +83,8 @@ class Transcript:
             engagement_signals=data.get("engagement_signals", {}),
             cached_at=data.get("cached_at"),
             outline=data.get("outline", []),
+            language=data.get("language", data.get("engagement_signals", {}).get("language", "en")),
+            language_probability=float(data.get("language_probability", data.get("engagement_signals", {}).get("language_probability", 0.0) or 0.0)),
         )
 
 

@@ -1,0 +1,457 @@
+diff --git a/dist/export/ExportWorker.js b/dist/export/ExportWorker.js
+index 9dbb5cd2f7b2bf991ec27ee89cd6b3b31dfc9600..c3a0381608cf2f835b26a5ec37836d81ab92418d 100644
+--- a/dist/export/ExportWorker.js
++++ b/dist/export/ExportWorker.js
+@@ -44,6 +44,142 @@ import { resolveTimeline } from '../resolver/resolveTimeline';
+ import { getTotalFrames } from '../utils/frames';
+ import { resolveDrawRect } from '../renderer/gpu/layers/drawRect';
+ import { computeTextLayout } from '../renderer/gpu/layers/textLayout';
++// ---- Webfont loading for the export worker (patched) ----------------------
++// A dedicated worker has its own FontFaceSet: webfonts loaded in the
++// document are NOT visible here, so canvas text would silently fall back.
++// Before rendering, every non-system family used by text clips is fetched
++// from Google Fonts and installed into self.fonts. Failures (offline,
++// unknown family) fall back to system type without failing the export.
++const GENERIC_FONT_FAMILIES = new Set(['sans-serif', 'serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong']);
++const SYSTEM_FONTS = new Set(['arial', 'helvetica', 'georgia', 'times', 'times new roman', 'impact', 'verdana', 'tahoma', 'trebuchet ms', 'arial black', 'courier', 'courier new', 'palatino', 'garamond', 'bookman', 'comic sans ms', 'candara', 'calibri', 'cambria', 'consolas', 'segoe ui', 'roboto']);
++async function loadWebFontIntoWorker(family) {
++    try {
++        const existing = await self.fonts.load(`16px "${family}"`);
++        if (existing && existing.length)
++            return;
++    }
++    catch { /* fall through to fetching */ }
++    const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, '+')}:wght@400;700&display=swap`;
++    const cssRes = await fetch(cssUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' } });
++    if (!cssRes.ok)
++        throw new Error(`font css ${cssRes.status}`);
++    const css = await cssRes.text();
++    const blocks = css.match(/@font-face\s*{[^}]*}/g) || [];
++    blocks.sort((a, b) => (/\/\*\s*latin\s*\*\//.test(a) ? 0 : 1) - (/\/\*\s*latin\s*\*\//.test(b) ? 0 : 1));
++    let loaded = 0;
++    for (const block of blocks.slice(0, 6)) {
++        const urlMatch = block.match(/url\((https:[^)]+?\.woff2)\)/);
++        const weightMatch = block.match(/font-weight:\s*(\d+)/);
++        if (!urlMatch)
++            continue;
++        try {
++            const fontRes = await fetch(urlMatch[1]);
++            if (!fontRes.ok)
++                continue;
++            const data = await fontRes.arrayBuffer();
++            const face = new FontFace(family, data, { weight: weightMatch ? weightMatch[1] : '400' });
++            self.fonts.add(face);
++            await face.load();
++            loaded++;
++        }
++        catch { /* try the next subset block */ }
++    }
++    if (!loaded)
++        throw new Error('no faces loaded');
++    try {
++        await self.fonts.load(`700 32px "${family}"`);
++    }
++    catch { /* noop */ }
++    try {
++        await self.fonts.load(`400 32px "${family}"`);
++    }
++    catch { /* noop */ }
++}
++async function ensureExportFonts(project) {
++    let families = [];
++    try {
++        const clips = Object.values(project.clips).flat();
++        const seen = new Set();
++        for (const clip of clips) {
++            if (clip?.type !== 'text')
++                continue;
++            const fam = String(clip.fontFamily || '').trim();
++            if (!fam)
++                continue;
++            const key = fam.toLowerCase();
++            if (seen.has(key) || GENERIC_FONT_FAMILIES.has(key) || SYSTEM_FONTS.has(key))
++                continue;
++            seen.add(key);
++            families.push(fam);
++        }
++    }
++    catch {
++        return;
++    }
++    for (const family of families) {
++        try {
++            await loadWebFontIntoWorker(family);
++            xlog('run', `webfont "${family}" ready in export worker`);
++        }
++        catch {
++            xlog('run', `webfont "${family}" unavailable in export worker — fallback type will be used`);
++        }
++    }
++}
++// ---- Text outline / shadow / background helpers (patched) -----------------
++// Paints strokeColor/strokeWidth (stage px, round joins) under the fill, an
++// optional background pill behind the text block, and a drop-shadow on the
++// fill pass only — mirrors the preview TextLayer so both stay pixel-identical.
++function applyTextShadow(ctx, item) {
++    if (!item.textShadowColor)
++        return;
++    ctx.shadowColor = item.textShadowColor;
++    ctx.shadowBlur = Math.max(0, Number(item.textShadowBlur ?? 0));
++    ctx.shadowOffsetX = Number(item.textShadowOffsetX ?? 0);
++    ctx.shadowOffsetY = Number(item.textShadowOffsetY ?? 0);
++}
++function paintTextBackground(ctx, layout, item) {
++    const color = item.textBackgroundColor;
++    if (!color || !layout.lines.join('').trim())
++        return;
++    const padX = layout.lineAdvance * 0.35;
++    const padY = layout.lineAdvance * 0.22;
++    const bx = layout.box.x - padX;
++    const by = layout.box.y - padY;
++    const bw = layout.box.width + padX * 2;
++    const bh = layout.box.height + padY * 2;
++    if (bw <= 0 || bh <= 0)
++        return;
++    ctx.save();
++    ctx.globalAlpha = ctx.globalAlpha * Number(item.textBackgroundOpacity ?? 1);
++    ctx.fillStyle = color;
++    const r = Math.min(padY, bh / 2);
++    if (typeof ctx.roundRect === 'function') {
++        ctx.beginPath();
++        ctx.roundRect(bx, by, bw, bh, r);
++        ctx.fill();
++    }
++    else {
++        ctx.fillRect(bx, by, bw, bh);
++    }
++    ctx.restore();
++}
++function strokeAndFillText(ctx, line, x, y, item) {
++    const w = Number(item.strokeWidth ?? 0);
++    if (item.strokeColor && w > 0) {
++        ctx.save();
++        ctx.strokeStyle = item.strokeColor;
++        ctx.lineWidth = Math.max(0.5, w);
++        ctx.lineJoin = 'round';
++        ctx.miterLimit = 2;
++        ctx.strokeText(line, x, y);
++        ctx.restore();
++    }
++    ctx.save();
++    applyTextShadow(ctx, item);
++    ctx.fillText(line, x, y);
++    ctx.restore();
++}
+ self.onmessage = async (e) => {
+     if (e.data?.type !== 'start')
+         return;
+@@ -85,6 +221,7 @@ async function runExport(project, options, audio) {
+     if (totalFrames === 0)
+         throw new Error('ExportWorker: project has no clips');
+     const allClips = Object.values(project.clips).flat();
++    await ensureExportFonts(project);
+     xlog('run', `clip inventory`, {
+         total: allClips.length,
+         video: allClips.filter(c => c.type === 'video').length,
+@@ -323,7 +460,7 @@ async function renderFrame(ctx, scene, clipCanvases, imageBitmaps, transitionSna
+                 });
+             }
+             if (wrapped) {
+-                drawMedia(ctx, wrapped.canvas, entry.item.transform, stageW, stageH);
++                drawMedia(ctx, wrapped.canvas, entry.item.transform, stageW, stageH, entry.item);
+             }
+             else {
+                 if (isDebugFrame)
+@@ -341,7 +478,7 @@ async function renderFrame(ctx, scene, clipCanvases, imageBitmaps, transitionSna
+                 });
+             }
+             if (bitmap) {
+-                drawMedia(ctx, bitmap, entry.item.transform, stageW, stageH);
++                drawMedia(ctx, bitmap, entry.item.transform, stageW, stageH, entry.item);
+             }
+         }
+         else if (entry.kind === 'text') {
+@@ -399,13 +536,31 @@ async function renderFrame(ctx, scene, clipCanvases, imageBitmaps, transitionSna
+         xlog('render:frame0', `frame 0 draw complete — ${items.length} layer(s) composited onto ${stageW}x${stageH}`);
+     }
+ }
+-function drawMedia(ctx, source, transform, stageW, stageH) {
++function drawMedia(ctx, source, transform, stageW, stageH, item) {
+     const rect = resolveDrawRect(transform, stageW, stageH, source.width, source.height);
+     const cx = rect.x + rect.width / 2;
+     const cy = rect.y + rect.height / 2;
+     ctx.translate(cx, cy);
+     ctx.rotate(rect.rotation);
++    // Color-adjustment presets (canvas 2d equivalent of the preview shader's
++    // brightness → contrast → saturate chain). Skipped when identity so
++    // exports without filters pay no perf/compat cost; reset explicitly
++    // afterwards instead of relying on the caller's save/restore.
++    const fb = Number(item?.filterBrightness ?? 1);
++    const fc = Number(item?.filterContrast ?? 1);
++    const fs = Number(item?.filterSaturate ?? 1);
++    if (fb !== 1 || fc !== 1 || fs !== 1) {
++        try {
++            ctx.filter = `brightness(${fb}) contrast(${fc}) saturate(${fs})`;
++        }
++        catch { /* ctx.filter unsupported — draw unfiltered */ }
++    }
+     ctx.drawImage(source, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
++    try {
++        if (ctx.filter !== 'none')
++            ctx.filter = 'none';
++    }
++    catch { /* noop */ }
+ }
+ function drawText(ctx, clip, stageW, stageH) {
+     const layout = computeTextLayout(ctx, clip, { width: stageW, height: stageH });
+@@ -420,8 +575,9 @@ function drawText(ctx, clip, stageW, stageH) {
+         ctx.rotate(rotation);
+         ctx.translate(-cx, -cy);
+     }
++    paintTextBackground(ctx, layout, clip);
+     for (let i = 0; i < layout.lines.length; i++) {
+-        ctx.fillText(layout.lines[i], layout.anchorX, layout.firstLineY + i * layout.lineAdvance);
++        strokeAndFillText(ctx, layout.lines[i], layout.anchorX, layout.firstLineY + i * layout.lineAdvance, clip);
+     }
+ }
+ function drawShape(ctx, item, stageW, stageH) {
+diff --git a/dist/renderer/gpu/layers/FrameProbeLayer.js b/dist/renderer/gpu/layers/FrameProbeLayer.js
+index 78345b897e1a12e9d1e375f9dfaccf1a1ddc6a9b..c1f0b12302f8bb120aeee979eed63f81a88d9b73 100644
+--- a/dist/renderer/gpu/layers/FrameProbeLayer.js
++++ b/dist/renderer/gpu/layers/FrameProbeLayer.js
+@@ -76,6 +76,9 @@ export class FrameProbeLayer {
+         gl.bindTexture(gl.TEXTURE_2D, res.texture);
+         this._program.setUniform1i(gl, 'uTexture', 0);
+         this._program.setUniform1f(gl, 'uOpacity', opacity);
++        this._program.setUniform1f(gl, 'uBrightness', 1);
++        this._program.setUniform1f(gl, 'uContrast', 1);
++        this._program.setUniform1f(gl, 'uSaturate', 1);
+         this._program.setUniformMatrix3fv(gl, 'uTransform', false, buildVideoTransformMatrix(item, ctx.stage.width, ctx.stage.height));
+         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+         console.log(`[PROBE-DRAW] clip=${item.id} frame=${frame}`);
+diff --git a/dist/renderer/gpu/layers/FreehandLayer.js b/dist/renderer/gpu/layers/FreehandLayer.js
+index 566d961006be3e2e4a8d3bd6f17669de7bd18cf7..2ebe2c625473867f235b165b780857b4e1475b0d 100644
+--- a/dist/renderer/gpu/layers/FreehandLayer.js
++++ b/dist/renderer/gpu/layers/FreehandLayer.js
+@@ -92,6 +92,9 @@ export class FreehandLayer {
+         gl.bindTexture(gl.TEXTURE_2D, res.texture);
+         this._program.setUniform1i(gl, 'uTexture', 0);
+         this._program.setUniform1f(gl, 'uOpacity', item.opacity ?? 1);
++        this._program.setUniform1f(gl, 'uBrightness', 1);
++        this._program.setUniform1f(gl, 'uContrast', 1);
++        this._program.setUniform1f(gl, 'uSaturate', 1);
+         this._program.setUniformMatrix3fv(gl, 'uTransform', false, FULL_STAGE_MAT3);
+         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+         gl.bindTexture(gl.TEXTURE_2D, null);
+diff --git a/dist/renderer/gpu/layers/ImageLayer.js b/dist/renderer/gpu/layers/ImageLayer.js
+index 802b9cff1a29701121526ffb29b352c539c83a29..979bc67ebd96bb04f20ade3b2dd0662d2464f599 100644
+--- a/dist/renderer/gpu/layers/ImageLayer.js
++++ b/dist/renderer/gpu/layers/ImageLayer.js
+@@ -69,6 +69,9 @@ export class ImageLayer {
+         gl.bindTexture(gl.TEXTURE_2D, res.texture);
+         this._program.setUniform1i(gl, 'uTexture', 0);
+         this._program.setUniform1f(gl, 'uOpacity', opacity);
++        this._program.setUniform1f(gl, 'uBrightness', item.filterBrightness ?? 1);
++        this._program.setUniform1f(gl, 'uContrast', item.filterContrast ?? 1);
++        this._program.setUniform1f(gl, 'uSaturate', item.filterSaturate ?? 1);
+         this._program.setUniformMatrix3fv(gl, 'uTransform', false, buildDrawTransformMatrix(item.transform, ctx.stage.width, ctx.stage.height, res.image.width, res.image.height));
+         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+         gl.bindTexture(gl.TEXTURE_2D, null);
+diff --git a/dist/renderer/gpu/layers/ShapeLayer.js b/dist/renderer/gpu/layers/ShapeLayer.js
+index c7ae5322b82d6d11d01eb8f8069d36d8d1c186fe..e5cc3b873c258407b315c0e968552c876b50b910 100644
+--- a/dist/renderer/gpu/layers/ShapeLayer.js
++++ b/dist/renderer/gpu/layers/ShapeLayer.js
+@@ -121,6 +121,9 @@ export class ShapeLayer {
+         gl.bindTexture(gl.TEXTURE_2D, res.texture);
+         this._program.setUniform1i(gl, 'uTexture', 0);
+         this._program.setUniform1f(gl, 'uOpacity', item.opacity ?? 1);
++        this._program.setUniform1f(gl, 'uBrightness', 1);
++        this._program.setUniform1f(gl, 'uContrast', 1);
++        this._program.setUniform1f(gl, 'uSaturate', 1);
+         this._program.setUniformMatrix3fv(gl, 'uTransform', false, FULL_STAGE_MAT3);
+         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+         gl.bindTexture(gl.TEXTURE_2D, null);
+diff --git a/dist/renderer/gpu/layers/TestLayer.js b/dist/renderer/gpu/layers/TestLayer.js
+index 720e31bb38d9854eaa0495356016c00541b711d8..12e6ffb785682ed5070f2c2cb7f17c4177a460f6 100644
+--- a/dist/renderer/gpu/layers/TestLayer.js
++++ b/dist/renderer/gpu/layers/TestLayer.js
+@@ -69,6 +69,9 @@ export class TestLayer {
+         gl.bindTexture(gl.TEXTURE_2D, res.texture);
+         this._program.setUniform1i(gl, 'uTexture', 0);
+         this._program.setUniform1f(gl, 'uOpacity', opacity);
++        this._program.setUniform1f(gl, 'uBrightness', 1);
++        this._program.setUniform1f(gl, 'uContrast', 1);
++        this._program.setUniform1f(gl, 'uSaturate', 1);
+         this._program.setUniformMatrix3fv(gl, 'uTransform', false, buildTransformMatrix(item, ctx.stage.width, ctx.stage.height));
+         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+         gl.bindTexture(gl.TEXTURE_2D, null);
+diff --git a/dist/renderer/gpu/layers/TextLayer.js b/dist/renderer/gpu/layers/TextLayer.js
+index 9f462ac599f276cf940cccafc712896219bb98fb..9306427c335e6e0ca18cb708ac695a46b7583de5 100644
+--- a/dist/renderer/gpu/layers/TextLayer.js
++++ b/dist/renderer/gpu/layers/TextLayer.js
+@@ -29,6 +29,14 @@ function paintSignature(item, stage) {
+         item.fontFamily,
+         item.fontWeight,
+         item.textAlign,
++        item.strokeColor,
++        item.strokeWidth,
++        item.textShadowColor,
++        item.textShadowBlur,
++        item.textShadowOffsetX,
++        item.textShadowOffsetY,
++        item.textBackgroundColor,
++        item.textBackgroundOpacity,
+         item.transform?.x,
+         item.transform?.y,
+         item.transform?.scale,
+@@ -36,6 +44,61 @@ function paintSignature(item, stage) {
+         stage.height,
+     ]);
+ }
++// Paints an optional background pill behind the whole text block (stage px).
++// Mirrors the export worker so preview and export stay pixel-identical.
++function paintTextBackground(ctx2d, layout, item) {
++    const color = item.textBackgroundColor;
++    if (!color || !layout.lines.join('').trim())
++        return;
++    const padX = layout.lineAdvance * 0.35;
++    const padY = layout.lineAdvance * 0.22;
++    const bx = layout.box.x - padX;
++    const by = layout.box.y - padY;
++    const bw = layout.box.width + padX * 2;
++    const bh = layout.box.height + padY * 2;
++    if (bw <= 0 || bh <= 0)
++        return;
++    ctx2d.save();
++    ctx2d.globalAlpha = ctx2d.globalAlpha * Number(item.textBackgroundOpacity ?? 1);
++    ctx2d.fillStyle = color;
++    const r = Math.min(padY, bh / 2);
++    if (typeof ctx2d.roundRect === 'function') {
++        ctx2d.beginPath();
++        ctx2d.roundRect(bx, by, bw, bh, r);
++        ctx2d.fill();
++    }
++    else {
++        ctx2d.fillRect(bx, by, bw, bh);
++    }
++    ctx2d.restore();
++}
++function applyTextShadow(ctx2d, item) {
++    if (!item.textShadowColor)
++        return;
++    ctx2d.shadowColor = item.textShadowColor;
++    ctx2d.shadowBlur = Math.max(0, Number(item.textShadowBlur ?? 0));
++    ctx2d.shadowOffsetX = Number(item.textShadowOffsetX ?? 0);
++    ctx2d.shadowOffsetY = Number(item.textShadowOffsetY ?? 0);
++}
++// Paints strokeColor/strokeWidth (stage px, round joins) under the fill, with
++// the drop-shadow applied to the fill pass only so glows hug the glyphs.
++// Mirrors the export worker so preview and export stay pixel-identical.
++function strokeAndFillText(ctx2d, line, x, y, item) {
++    const w = Number(item.strokeWidth ?? 0);
++    if (item.strokeColor && w > 0) {
++        ctx2d.save();
++        ctx2d.strokeStyle = item.strokeColor;
++        ctx2d.lineWidth = Math.max(0.5, w);
++        ctx2d.lineJoin = 'round';
++        ctx2d.miterLimit = 2;
++        ctx2d.strokeText(line, x, y);
++        ctx2d.restore();
++    }
++    ctx2d.save();
++    applyTextShadow(ctx2d, item);
++    ctx2d.fillText(line, x, y);
++    ctx2d.restore();
++}
+ export class TextLayer {
+     constructor(createCanvas) {
+         this._program = null;
+@@ -113,6 +176,9 @@ export class TextLayer {
+         gl.bindTexture(gl.TEXTURE_2D, res.texture);
+         this._program.setUniform1i(gl, 'uTexture', 0);
+         this._program.setUniform1f(gl, 'uOpacity', opacity);
++        this._program.setUniform1f(gl, 'uBrightness', 1);
++        this._program.setUniform1f(gl, 'uContrast', 1);
++        this._program.setUniform1f(gl, 'uSaturate', 1);
+         this._program.setUniformMatrix3fv(gl, 'uTransform', false, buildTextTransformMatrix(item.transform, ctx.stage));
+         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+         gl.bindTexture(gl.TEXTURE_2D, null);
+@@ -149,8 +215,9 @@ export class TextLayer {
+         ctx2d.fillStyle = layout.style.color;
+         ctx2d.textBaseline = 'middle';
+         ctx2d.textAlign = layout.style.textAlign;
++        paintTextBackground(ctx2d, layout, item);
+         layout.lines.forEach((line, i) => {
+-            ctx2d.fillText(line, layout.anchorX, layout.firstLineY + i * layout.lineAdvance);
++            strokeAndFillText(ctx2d, line, layout.anchorX, layout.firstLineY + i * layout.lineAdvance, item);
+         });
+     }
+     _ensurePipeline(gl) {
+diff --git a/dist/renderer/gpu/layers/VideoLayer.js b/dist/renderer/gpu/layers/VideoLayer.js
+index da45343f84552c7eb2817ba4adcb9fd4096ec2ee..92ed01f1300454f0aef2800b23aaf2449cf6d262 100644
+--- a/dist/renderer/gpu/layers/VideoLayer.js
++++ b/dist/renderer/gpu/layers/VideoLayer.js
+@@ -150,6 +150,9 @@ export class VideoLayer {
+             return;
+         this._program.setUniform1i(ctx.gl, 'uTexture', unit);
+         this._program.setUniform1f(ctx.gl, 'uOpacity', opacity);
++        this._program.setUniform1f(ctx.gl, 'uBrightness', item.filterBrightness ?? 1);
++        this._program.setUniform1f(ctx.gl, 'uContrast', item.filterContrast ?? 1);
++        this._program.setUniform1f(ctx.gl, 'uSaturate', item.filterSaturate ?? 1);
+         this._program.setUniformMatrix3fv(ctx.gl, 'uTransform', false, buildVideoTransformMatrix(item, ctx.stage.width, ctx.stage.height, contentSize?.width, contentSize?.height));
+         ctx.gl.drawArrays(ctx.gl.TRIANGLE_STRIP, 0, 4);
+         ctx.gl.bindTexture(ctx.gl.TEXTURE_2D, null);
+diff --git a/dist/renderer/gpu/shaders/quad.frag.js b/dist/renderer/gpu/shaders/quad.frag.js
+index e72ab3a48d3702e1ade2f3466fd1cb383f9c5fd4..3e83b94e10972d9c055b6c02506314ab8782da7b 100644
+--- a/dist/renderer/gpu/shaders/quad.frag.js
++++ b/dist/renderer/gpu/shaders/quad.frag.js
+@@ -3,12 +3,22 @@ precision mediump float;
+ 
+ uniform sampler2D uTexture;
+ uniform float uOpacity;
++uniform float uBrightness;
++uniform float uContrast;
++uniform float uSaturate;
+ 
+ in vec2 vTexCoord;
+ out vec4 fragColor;
+ 
+ void main() {
+   vec4 texel = texture(uTexture, vTexCoord);
+-  fragColor = vec4(texel.rgb * uOpacity, texel.a * uOpacity);
++  // Color adjustments (identity when all are 1.0): brightness, then
++  // contrast, then saturate — the same order as the CSS filter chain used
++  // by the export worker, so preview and export agree.
++  vec3 c = texel.rgb * uBrightness;
++  c = (c - 0.5) * uContrast + 0.5;
++  float luma = dot(c, vec3(0.213, 0.715, 0.072));
++  c = mix(vec3(luma), c, uSaturate);
++  fragColor = vec4(c * uOpacity, texel.a * uOpacity);
+ }
+ `;
+diff --git a/dist/types/index.d.ts b/dist/types/index.d.ts
+index 3c0e1dc16975534443425a1b489720d68cf6a3a1..8c85ef4b513b64cac74f0aa18cb99b83c55eaa51 100644
+--- a/dist/types/index.d.ts
++++ b/dist/types/index.d.ts
+@@ -42,6 +42,21 @@ export interface Clip {
+     pathData?: string;
+     strokeColor?: string;
+     strokeWidth?: number;
++    /** Text drop-shadow / glow color (canvas shadowColor, stage px). */
++    textShadowColor?: string;
++    /** Text shadow blur radius (canvas shadowBlur, stage px). */
++    textShadowBlur?: number;
++    /** Text shadow offsets (canvas shadowOffsetX/Y, stage px). */
++    textShadowOffsetX?: number;
++    textShadowOffsetY?: number;
++    /** Text background pill color (no background when unset). */
++    textBackgroundColor?: string;
++    /** Text background opacity 0-1 (default 1). */
++    textBackgroundOpacity?: number;
++    /** Color-adjustment multipliers for video/image clips (default 1 = off). */
++    filterBrightness?: number;
++    filterContrast?: number;
++    filterSaturate?: number;
+     volume?: number;
+     opacity?: number;
+     locked?: boolean;

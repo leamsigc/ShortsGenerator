@@ -1,6 +1,7 @@
 @use "./helpers/transition";
 
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+// NOTE: Poppins loads via <link> in nuxt.config app.head — a CSS @import
+// here would sit after @use output and browsers would ignore it.
 
 
 @tailwind base;

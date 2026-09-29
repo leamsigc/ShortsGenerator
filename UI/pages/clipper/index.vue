@@ -79,8 +79,9 @@ onMounted(() => {
   onUnmounted(() => window.removeEventListener("clipper-new-project", handler))
 })
 
-// Processing
-const transcriptionLanguage = ref("en")
+// Processing — "auto" lets Whisper detect the video's spoken language so
+// subtitles match the audio instead of forcing English.
+const transcriptionLanguage = ref("auto")
 const whisperModelSize = ref("")
 const handleProcessProject = async () => {
   if (!clipperStore.currentProject) return
@@ -498,11 +499,14 @@ const handleBatchSchedule = async () => {
 }
 
 const languageOptions = [
+  { label: "Auto-detect", value: "auto" },
   { label: "English", value: "en" },
   { label: "Spanish", value: "es" },
   { label: "German", value: "de" },
   { label: "French", value: "fr" },
   { label: "Portuguese", value: "pt" },
+  { label: "Italian", value: "it" },
+  { label: "Dutch", value: "nl" },
 ]
 
 const whisperModelOptions = [

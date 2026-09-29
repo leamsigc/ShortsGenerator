@@ -23,7 +23,10 @@ const emit = defineEmits<{
 }>()
 
 const timelineEl = ref<HTMLElement | null>(null)
-const dragging = ref<null | "start" | "end" | "playhead">(null)
+const dragging = ref<null | "start" | "end" | "seek">(null)
+// Suppress the synthetic click-to-seek right after a handle drag ends
+// (pointerup on the track would otherwise jump the playhead).
+let suppressSeekUntil = 0
 
 const duration = computed(() => props.videoDuration || Math.max(props.clipEnd, 1))
 const pct = (time: number) => `${Math.min(100, Math.max(0, (time / duration.value) * 100))}%`
@@ -39,20 +42,48 @@ const timeFromEvent = (event: PointerEvent | MouseEvent): number => {
   return ratio * duration.value
 }
 
-const onDown = (mode: "start" | "end" | "playhead") => (event: PointerEvent) => {
+const clampStart = (t: number) => Math.max(0, Math.min(t, props.clipEnd - 0.5))
+const clampEnd = (t: number) => Math.min(duration.value, Math.max(t, props.clipStart + 0.5))
+
+const handleDown = (mode: "start" | "end" | "seek", event: PointerEvent) => {
   event.preventDefault()
+  event.stopPropagation()
   dragging.value = mode
-  if (mode === "playhead") emit("seek", timeFromEvent(event))
+  // Capture the pointer so moves outside the track still update the handle
+  // and pointerup is always observed (prevents "stuck" drags).
+  try { (event.currentTarget as HTMLElement)?.setPointerCapture?.(event.pointerId) } catch { /* noop */ }
+  const time = timeFromEvent(event)
+  if (mode === "start") emit("updateStart", clampStart(time))
+  else if (mode === "end") emit("updateEnd", clampEnd(time))
+  else emit("seek", Math.max(0, Math.min(time, duration.value)))
 }
-const onMove = (event: PointerEvent) => {
+const handleMove = (event: PointerEvent) => {
   const mode = dragging.value
   if (!mode) return
+  event.preventDefault()
   const time = timeFromEvent(event)
-  if (mode === "start") emit("updateStart", Math.min(time, props.clipEnd - 1))
-  else if (mode === "end") emit("updateEnd", Math.max(time, props.clipStart + 1))
-  else emit("seek", time)
+  if (mode === "start") emit("updateStart", clampStart(time))
+  else if (mode === "end") emit("updateEnd", clampEnd(time))
+  else emit("seek", Math.max(0, Math.min(time, duration.value)))
 }
-const onUp = () => { dragging.value = null }
+const handleUp = (event?: PointerEvent) => {
+  if (dragging.value === "start" || dragging.value === "end") {
+    // A handle drag ends with a pointerup that bubbles to the track —
+    // ignore track clicks for a beat so the playhead doesn't jump.
+    suppressSeekUntil = Date.now() + 250
+  }
+  dragging.value = null
+  if (event) {
+    try { (event.currentTarget as HTMLElement)?.releasePointerCapture?.(event.pointerId) } catch { /* noop */ }
+  }
+}
+// Click (no drag) on the track seeks. Drags are handled via pointer capture
+// above, so a plain click is simply down+up with no move.
+const onTrackClick = (event: MouseEvent) => {
+  if (dragging.value) return
+  if (Date.now() < suppressSeekUntil) return
+  emit("seek", Math.max(0, Math.min(timeFromEvent(event), duration.value)))
+}
 
 const fmt = (t: number) => `${Math.floor(t / 60)}:${(Math.floor(t % 60)).toString().padStart(2, "0")}`
 </script>
@@ -67,11 +98,12 @@ const fmt = (t: number) => `${Math.floor(t / 60)}:${(Math.floor(t % 60)).toStrin
 
     <div
       ref="timelineEl"
-      class="relative h-14 bg-neutral-100 dark:bg-neutral-800 rounded-lg border border-clipper-ink/12 dark:border-white/10 select-none cursor-crosshair overflow-hidden"
-      @pointerdown="onDown('playhead')"
-      @pointermove="onMove"
-      @pointerup="onUp"
-      @pointercancel="onUp"
+      class="relative h-14 bg-neutral-100 dark:bg-neutral-800 rounded-lg border border-clipper-ink/12 dark:border-white/10 select-none cursor-crosshair overflow-hidden touch-none"
+      @pointerdown="(e) => handleDown('seek', e)"
+      @pointermove="handleMove"
+      @pointerup="handleUp"
+      @pointercancel="handleUp"
+      @click="onTrackClick"
     >
       <!-- waveform words -->
       <div
@@ -90,22 +122,24 @@ const fmt = (t: number) => `${Math.floor(t / 60)}:${(Math.floor(t % 60)).toStrin
 
       <!-- start handle — 44px hit area, 8px visual -->
       <div
-        class="absolute top-0 bottom-0 w-11 cursor-ew-resize flex items-center justify-start z-10"
+        class="absolute top-0 bottom-0 w-11 cursor-ew-resize flex items-center justify-start z-10 touch-none"
         :style="{ left: `calc(${pct(clipStart)} - 22px)` }"
-        @pointerdown.stop="onDown('start')"
-        @pointermove="onMove"
-        @pointerup="onUp"
+        @pointerdown.stop="(e) => handleDown('start', e)"
+        @pointermove="handleMove"
+        @pointerup="handleUp"
+        @pointercancel="handleUp"
       >
         <div class="w-2 h-9 bg-clipper-green rounded ml-[17px]" />
       </div>
 
       <!-- end handle — 44px hit area, 8px visual -->
       <div
-        class="absolute top-0 bottom-0 w-11 cursor-ew-resize flex items-center justify-end z-10"
+        class="absolute top-0 bottom-0 w-11 cursor-ew-resize flex items-center justify-end z-10 touch-none"
         :style="{ left: `calc(${pct(clipEnd)} - 22px)` }"
-        @pointerdown.stop="onDown('end')"
-        @pointermove="onMove"
-        @pointerup="onUp"
+        @pointerdown.stop="(e) => handleDown('end', e)"
+        @pointermove="handleMove"
+        @pointerup="handleUp"
+        @pointercancel="handleUp"
       >
         <div class="w-2 h-9 bg-clipper-green rounded mr-[17px]" />
       </div>

@@ -1,4 +1,4 @@
-<script lang="ts" setup">
+<script lang="ts" setup>
 /**
  * TransportBar — video transport under the preview: current | total timecode
  * (current in accent), big round play/pause, and a stop (pause + seek 0) ghost.

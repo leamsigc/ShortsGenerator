@@ -123,6 +123,47 @@ const applyFit = (mode: "contain" | "cover") => {
   put({ transform })
 }
 
+// ---- Filters (color adjustments; 1 = off, rendered in preview + export) ----
+interface FilterPreset {
+  label: string
+  brightness: number
+  contrast: number
+  saturate: number
+}
+const FILTER_PRESETS: FilterPreset[] = [
+  { label: "None", brightness: 1, contrast: 1, saturate: 1 },
+  { label: "Vivid", brightness: 1.06, contrast: 1.12, saturate: 1.35 },
+  { label: "Punchy", brightness: 1, contrast: 1.3, saturate: 1.2 },
+  { label: "Bright", brightness: 1.15, contrast: 1, saturate: 1 },
+  { label: "Soft", brightness: 1.08, contrast: 0.85, saturate: 0.75 },
+  { label: "Noir", brightness: 1, contrast: 1.25, saturate: 0 },
+]
+const brightnessModel = computed<number>({
+  get: () => clip.value?.filterBrightness ?? 1,
+  set: (v) => preview({ filterBrightness: v }),
+})
+const contrastModel = computed<number>({
+  get: () => clip.value?.filterContrast ?? 1,
+  set: (v) => preview({ filterContrast: v }),
+})
+const saturateModel = computed<number>({
+  get: () => clip.value?.filterSaturate ?? 1,
+  set: (v) => preview({ filterSaturate: v }),
+})
+const activePreset = computed<FilterPreset | null>(() => {
+  const b = brightnessModel.value
+  const c = contrastModel.value
+  const s = saturateModel.value
+  return FILTER_PRESETS.find(p =>
+    Math.abs(p.brightness - b) < 1e-6 &&
+    Math.abs(p.contrast - c) < 1e-6 &&
+    Math.abs(p.saturate - s) < 1e-6,
+  ) ?? null
+})
+const applyPreset = (p: FilterPreset) => {
+  put({ filterBrightness: p.brightness, filterContrast: p.contrast, filterSaturate: p.saturate })
+}
+
 // ---- Style ----
 const opacityModel = computed<number>({
   get: () => clip.value?.opacity ?? 1,
@@ -247,6 +288,69 @@ const typeLabel = computed(() => (clip.value?.type === "image" ? "Image" : "Vide
               :format-tooltip="pctTooltip"
               @mouseup="commit('Edit opacity')"
               @touchend="commit('Edit opacity')"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-[11px] font-medium text-clipper-ink dark:text-white">Filter preset</label>
+            <div class="flex flex-wrap gap-1.5">
+              <n-button
+                v-for="p in FILTER_PRESETS"
+                :key="p.label"
+                size="tiny"
+                :type="activePreset?.label === p.label ? 'primary' : 'default'"
+                @click="applyPreset(p)"
+              >
+                {{ p.label }}
+              </n-button>
+            </div>
+          </div>
+
+          <div>
+            <div class="mb-1.5 flex items-center justify-between">
+              <label class="text-[11px] font-medium text-clipper-ink dark:text-white">Brightness</label>
+              <span class="font-mono text-[10px] tabular-nums text-clipper-ink/50 dark:text-white/50">{{ pctTooltip(brightnessModel) }}</span>
+            </div>
+            <n-slider
+              v-model:value="brightnessModel"
+              :min="0"
+              :max="2"
+              :step="0.01"
+              :format-tooltip="pctTooltip"
+              @mouseup="commit('Edit filter')"
+              @touchend="commit('Edit filter')"
+            />
+          </div>
+
+          <div>
+            <div class="mb-1.5 flex items-center justify-between">
+              <label class="text-[11px] font-medium text-clipper-ink dark:text-white">Contrast</label>
+              <span class="font-mono text-[10px] tabular-nums text-clipper-ink/50 dark:text-white/50">{{ pctTooltip(contrastModel) }}</span>
+            </div>
+            <n-slider
+              v-model:value="contrastModel"
+              :min="0"
+              :max="2"
+              :step="0.01"
+              :format-tooltip="pctTooltip"
+              @mouseup="commit('Edit filter')"
+              @touchend="commit('Edit filter')"
+            />
+          </div>
+
+          <div>
+            <div class="mb-1.5 flex items-center justify-between">
+              <label class="text-[11px] font-medium text-clipper-ink dark:text-white">Saturation</label>
+              <span class="font-mono text-[10px] tabular-nums text-clipper-ink/50 dark:text-white/50">{{ pctTooltip(saturateModel) }}</span>
+            </div>
+            <n-slider
+              v-model:value="saturateModel"
+              :min="0"
+              :max="2"
+              :step="0.01"
+              :format-tooltip="pctTooltip"
+              @mouseup="commit('Edit filter')"
+              @touchend="commit('Edit filter')"
             />
           </div>
 

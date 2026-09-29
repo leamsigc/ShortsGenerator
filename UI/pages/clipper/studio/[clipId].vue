@@ -28,6 +28,10 @@ interface SubtitleTemplate {
   position?: string
   stroke_color?: string
   stroke_width?: number
+  shadow_color?: string
+  shadow_blur?: number
+  shadow_offset_x?: number
+  shadow_offset_y?: number
 }
 
 const clipId = computed(() => String(route.params.clipId))
@@ -87,6 +91,23 @@ const buildCaptions = (transcript: Transcript | null, clipData: ClipSegment, tem
   const color = template?.color || "#FFFF00"
   const y = captionY(template?.position)
   const textAlign = captionAlign(template?.position)
+  // Outline + shadow travel with the caption spec (authored at 1920px
+  // height in settings.py — scaled to the stage like the font size).
+  const strokeWidth = Number(template?.stroke_width ?? 0)
+  const shadowScale = stageHeight / 1920
+  const captionStyle = {
+    ...(strokeWidth > 0 && template?.stroke_color
+      ? { strokeColor: template.stroke_color, strokeWidth }
+      : {}),
+    ...((template?.shadow_color ?? (template?.stroke_color && strokeWidth > 0 ? template.stroke_color : undefined))
+      ? {
+          textShadowColor: (template?.shadow_color ?? template?.stroke_color) as string,
+          textShadowBlur: (template?.shadow_blur ?? 2) * shadowScale,
+          textShadowOffsetX: (template?.shadow_offset_x ?? 0) * shadowScale,
+          textShadowOffsetY: (template?.shadow_offset_y ?? (y === 0.5 ? 0 : 2)) * shadowScale,
+        }
+      : {}),
+  }
   let lastEndFrame = 0
   return chunks.map(ws => {
     // Frame-rounding can make adjacent chunks overlap by a frame — clamp.
@@ -103,6 +124,7 @@ const buildCaptions = (transcript: Transcript | null, clipData: ClipSegment, tem
       fontWeight: "bold",
       textAlign,
       y,
+      ...captionStyle,
     }
   })
 }

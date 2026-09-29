@@ -68,6 +68,42 @@ const onCancel = () => {
   if (!exporting.value) emit("update:show", false)
 }
 
+// Canvas text resolves fonts through document.fonts at draw time — if the
+// export starts before the webfont arrives, captions bake in fallback type.
+// Load every family/weight used by text clips (with a timeout so offline
+// machines fall back instead of hanging), then flush the font queue.
+const ensureExportFonts = async () => {
+  const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | []> =>
+    Promise.race([p, new Promise<[]>(resolve => setTimeout(() => resolve([]), ms))])
+  try {
+    const project = props.elah.engine.getProject()
+    const pairs = new Map<string, Set<string>>()
+    for (const clips of Object.values(project.clips)) {
+      for (const c of clips) {
+        if (c.type !== "text") continue
+        const family = (c.fontFamily || "sans-serif").trim()
+        if (!family) continue
+        const weight = c.fontWeight === "bold" ? "700" : "400"
+        if (!pairs.has(family)) pairs.set(family, new Set())
+        pairs.get(family)!.add(weight)
+      }
+    }
+    await withTimeout(
+      Promise.all(
+        [...pairs.entries()].flatMap(([family, weights]) =>
+          [...weights].map(w =>
+            document.fonts.load(`${w} 48px "${family.replace(/"/g, "")}"`).catch(() => []),
+          ),
+        ),
+      ),
+      8000,
+    )
+  } catch { /* Font API unavailable — export falls back silently */ }
+  try {
+    await withTimeout(document.fonts.ready, 4000)
+  } catch { /* noop */ }
+}
+
 const doExport = async () => {
   if (exporting.value || !canExport.value) return
   props.elah.pause()
@@ -75,6 +111,7 @@ const doExport = async () => {
   progress.value = null
   controller = new AbortController()
   const preset = PRESETS[selectedPreset.value]
+  await ensureExportFonts()
   try {
     const blob = await exportVideo(props.elah.withVideoAudio(props.elah.engine.getProject()), {
       videoCodec: videoCodec.value,

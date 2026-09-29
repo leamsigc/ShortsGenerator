@@ -37,6 +37,8 @@ export interface Transcript {
   i_words: number
   engagement_signals: Record<string, any>
   outline?: OutlineItem[]
+  language?: string
+  language_probability?: number
 }
 
 export interface LlmSettings {
@@ -517,7 +519,7 @@ export const useClipperStore = defineStore("clipper", {
       }
     },
 
-    async processProject(projectId: string, language: string | null = null, opts: { autoSelect?: boolean; modelSize?: string } = {}) {
+    async processProject(projectId: string, language: string | null = "auto", opts: { autoSelect?: boolean; modelSize?: string } = {}) {
       this.processing = true
       this.progress = { stage: "downloading", progress: 0, message: "Starting...", current_clip: 0, total_clips: 0 }
 

@@ -1404,6 +1404,91 @@ def delete_video():
     return jsonify({"status": "success", "message": f"Deleted {', '.join(deleted)}"})
 
 
+def _clear_mp4_sidecars(target_dir):
+    """Delete every .mp4 + its .json sidecar in target_dir. Returns file list."""
+    deleted = []
+    if not os.path.isdir(target_dir):
+        return deleted
+    for f in os.listdir(target_dir):
+        if not f.endswith(".mp4"):
+            continue
+        if os.path.basename(f) != f:  # paranoia: flat dir, no traversal
+            continue
+        video_path = os.path.join(target_dir, f)
+        if not os.path.isfile(video_path):
+            continue
+        os.remove(video_path)
+        deleted.append(f)
+        json_path = os.path.join(target_dir, f"{os.path.splitext(f)[0]}.json")
+        if os.path.exists(json_path):
+            os.remove(json_path)
+            deleted.append(os.path.basename(json_path))
+    return deleted
+
+
+@app.route("/api/video/clear-category", methods=["POST"])
+def clear_video_category():
+    data = request.get_json(silent=True) or {}
+    category = data.get("category", "")
+    if category not in ("generated", "instagram", "clipper", "downloads"):
+        return jsonify({"status": "error", "message": "Invalid category"}), 400
+
+    static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+    deleted_files = []
+
+    def _target(*parts):
+        target_dir = os.path.join(static_root, *parts)
+        if not os.path.abspath(target_dir).startswith(static_root):
+            raise ValueError("Invalid path")
+        return target_dir
+
+    try:
+        if category == "generated":
+            deleted_files += _clear_mp4_sidecars(_target("generated_videos"))
+        elif category == "instagram":
+            deleted_files += _clear_mp4_sidecars(_target("generated_videos", "instagram"))
+        elif category == "downloads":
+            deleted_files += _clear_mp4_sidecars(_target("assets", "temp"))
+        else:  # clipper: renders + exports across all projects
+            projects_root = _target("clipper", "projects")
+            reset_ids = set()
+            if os.path.isdir(projects_root):
+                for project_dir in os.listdir(projects_root):
+                    project_path = os.path.join(projects_root, project_dir)
+                    if not os.path.isdir(project_path):
+                        continue
+                    for sub in ["renders"]:
+                        deleted_files += _clear_mp4_sidecars(os.path.join(project_path, sub))
+                    exports_dir = os.path.join(project_path, "exports")
+                    if os.path.isdir(exports_dir):
+                        for fmt in os.listdir(exports_dir):
+                            fmt_dir = os.path.join(exports_dir, fmt)
+                            if os.path.isdir(fmt_dir):
+                                deleted_files += _clear_mp4_sidecars(fmt_dir)
+            # Reset status of clips whose render/export was removed so they can be re-rendered
+            for f in deleted_files:
+                if f.endswith(".mp4"):
+                    reset_ids.add(os.path.splitext(f)[0])
+            if reset_ids:
+                try:
+                    from classes.ClipperProject import project_store
+                    for project in project_store.list_projects():
+                        for clip in project_store.get_clips(project.id):
+                            if clip.id in reset_ids and getattr(clip, "status", "") != "selected":
+                                clip.status = "selected"
+                                project_store.save_clip(clip)
+                except Exception as e:
+                    print(colored(f"[-] Could not reset clip statuses after clear: {e}", "yellow"))
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    print(colored(f"[+] Cleared ({category}): {len(deleted_files)} files", "green"))
+    return jsonify({"status": "success", "message": f"Cleared {len(deleted_files)} files from {category}",
+                    "data": {"deleted": len(deleted_files), "files": deleted_files}})
+
+
 @app.route("/api/leadgen/health", methods=["GET"])
 def leadgen_health():
     port = request.args.get("port", 9222, type=int)

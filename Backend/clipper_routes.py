@@ -322,7 +322,9 @@ def process_project():
     try:
         data = request.get_json(silent=True) or {}
         project_id = data.get("project_id")
-        language = data.get("language", "en")
+        # "auto" (UI default) → Whisper auto-detects the video's language so
+        # subtitles match the spoken audio instead of forcing English.
+        language = data.get("language", "auto") or "auto"
         auto_select = data.get("auto_select", True)
         model_size = data.get("model_size") or None
         from llm_providers import get_clipper_ai_model

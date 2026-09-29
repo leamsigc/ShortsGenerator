@@ -270,18 +270,36 @@ def generate_word_synced_srt(
     output_path: str,
     start_offset: float = 0.0,
     max_words_per_line: int = 8,
+    max_chars_per_line: int = 42,
 ) -> str:
-    """Generate SRT with per-word timing for karaoke-style highlighting."""
+    """Generate SRT with per-word timing for karaoke-style highlighting.
+
+    Chunking mirrors the main generator (`srt_equalizer`, max ~42 chars):
+    words accumulate until the char budget (or the word cap) is hit, so
+    clip captions wrap exactly like generate-pipeline subtitles instead of
+    fixed 8-word blocks that overflow narrow 9:16 frames.
+    """
     if not words:
         return output_path
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    entries: List[str] = []
-    counter = 1
+    chunks: List[List[WordTimestamp]] = []
+    current: List[WordTimestamp] = []
+    current_len = 0
+    for w in words:
+        token_len = len(w.word) + (1 if current else 0)
+        if current and (len(current) >= max_words_per_line or current_len + token_len > max_chars_per_line):
+            chunks.append(current)
+            current = []
+            current_len = 0
+        current.append(w)
+        current_len += token_len
+    if current:
+        chunks.append(current)
 
-    for i in range(0, len(words), max_words_per_line):
-        chunk = words[i:i + max_words_per_line]
+    entries: List[str] = []
+    for counter, chunk in enumerate(chunks, start=1):
         chunk_start = chunk[0].start_time + start_offset
         chunk_end = chunk[-1].end_time + start_offset
         text = " ".join(w.word for w in chunk)
@@ -291,12 +309,34 @@ def generate_word_synced_srt(
             f"{_format_srt_time(chunk_start)} --> {_format_srt_time(chunk_end)}\n"
             f"{text}\n"
                 )
-        counter += 1
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(entries) + "\n")
 
     return output_path
+
+
+def _clipper_font_family(font_path: str) -> str:
+    """Resolve a font file to its family name (same as generate pipeline).
+
+    libass matches `FontName` against the family, not the filename — using
+    fc-scan keeps clipper captions on the exact same font as /api/generate.
+    """
+    try:
+        from video import _get_font_family
+        return _get_font_family(font_path)
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(
+            ["fc-scan", "--format", "%{family}", font_path],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split(",")[0]
+    except Exception:
+        pass
+    return os.path.splitext(os.path.basename(font_path))[0]
 
 
 def burn_subtitles_and_hook(
@@ -307,10 +347,17 @@ def burn_subtitles_and_hook(
     template: ClipTemplate,
     face_x: float = 0.5,
     face_y: float = 0.35,
+    target_w: int = 1080,
+    target_h: int = 1920,
 ) -> bool:
-    """Burn word-synced subtitles and hook title into a clip using ffmpeg."""
-    target_w, target_h = get_aspect_ratio_dimensions("9:16")
+    """Burn word-synced subtitles and hook title into a clip using ffmpeg.
 
+    Uses the SAME subtitle rendering as the main generator
+    (`video._ffmpeg_render_with_subtitles`): same system templates
+    (settings.py), same ASS PlayRes scaling, same font-family resolution,
+    same filter escaping with `original_size`. target_w/h must match the
+    already-cropped clip dimensions so caption size/position is identical.
+    """
     sub_template = resolve_clipper_subtitle_template(template.subtitle_template)
 
     color = sub_template["color"]
@@ -323,12 +370,22 @@ def burn_subtitles_and_hook(
         h = hex_color.lstrip("#")
         if len(h) == 3:
             h = "".join(c * 2 for c in h)
+        if len(h) != 6:
+            return "&H00000000"
+        try:
+            int(h, 16)
+        except ValueError:
+            return "&H00000000"
         return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}"
 
     primary = _hex_to_ass(color)
     outline = _hex_to_ass(stroke_color)
 
-    pos_map = {"center,bottom": 2, "center,center": 5, "center,top": 8}
+    pos_map = {
+        "center,bottom": 2, "center,center": 5, "center,top": 8,
+        "left,bottom": 1, "right,bottom": 3, "left,center": 4,
+        "right,center": 6, "left,top": 7, "right,top": 9,
+    }
     alignment = pos_map.get(position, 2)
 
     font_path = os.path.join(
@@ -336,19 +393,19 @@ def burn_subtitles_and_hook(
         template.font or "bold_font.ttf",
     )
     font_path = os.path.abspath(font_path)
-    font_dir = os.path.dirname(font_path)
-    font_name = os.path.splitext(os.path.basename(font_path))[0]
     if not os.path.exists(font_path):
-        font_dir = os.path.abspath(os.path.join(
-            os.path.dirname(__file__), "..", "static", "assets", "fonts"))
-        font_name = "bold_font"
+        font_path = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "static", "assets", "fonts", "bold_font.ttf"))
+    font_dir = os.path.dirname(font_path)
+    font_family = _clipper_font_family(font_path)
 
+    # ASS PlayRes defaults to 384x288 for SRT — identical scaling to generate.
     ass_playres_y = 288
     fontsize_ass = max(12, round(fontsize * ass_playres_y / target_h))
     stroke_width_ass = max(0, round(stroke_width * ass_playres_y / target_h))
 
-    force_style = (
-        f"FontName={font_name},"
+    ass_style = (
+        f"FontName={font_family},"
         f"FontSize={fontsize_ass},"
         f"PrimaryColour={primary},"
         f"OutlineColour={outline},"
@@ -357,12 +414,14 @@ def burn_subtitles_and_hook(
         f"Alignment={alignment}"
     )
 
-    # Option values must be single-quoted: unquoted commas inside force_style
-    # would be parsed as filter separators ("No such filter: 'FontSize'").
+    # Same escaping as the generate pipeline: ffmpeg splits filters on ","
+    # and options on ":", so both must be escaped inside force_style/paths.
+    escaped_style = ass_style.replace(",", "\\,").replace(":", "\\:")
+    safe_subs = subtitle_srt_path.replace(":", "\\:")
+    safe_fontdir = font_dir.replace(":", "\\:")
     filters = [
-        f"subtitles=filename='{subtitle_srt_path}'"
-        f":fontsdir='{font_dir}'"
-        f":force_style='{force_style}'"
+        f"subtitles={safe_subs}:fontsdir={safe_fontdir}"
+        f":original_size={target_w}x{target_h}:force_style={escaped_style}"
     ]
 
     if hook_title:
@@ -780,16 +839,17 @@ class Clipper:
 
     def process_sources(
         self,
-        language: str = "en",
+        language: str = "auto",
         model_size: str = None,
         ai_model: str = None
     ) -> List[Dict[str, Any]]:
         """
         Download and transcribe all source videos using local faster-whisper.
-        Defaults to English ("en"); pass another ISO language code to override.
-        Reuses cached transcripts when the source is already downloaded and
-        transcribed. User-provided SRT files (sources/<source_id>.srt) skip
-        Whisper transcription entirely.
+        Defaults to "auto" (Whisper auto-detects the video's language so
+        subtitles match the spoken audio); pass an ISO language code to force
+        one (e.g. "es", "de"). Reuses cached transcripts when the source is
+        already downloaded and transcribed. User-provided SRT files
+        (sources/<source_id>.srt) skip Whisper transcription entirely.
         Returns list of source results.
         """
         from transcription import parse_srt_file
@@ -798,7 +858,11 @@ class Clipper:
         results = []
 
         total = max(1, len(self.project.source_urls))
-        language = language or "en"
+        # "auto"/"" /None → Whisper auto-detect (subtitles follow the video's
+        # spoken language instead of forcing English).
+        from transcription import normalize_transcription_language
+        whisper_lang = normalize_transcription_language(language)
+        display_lang = whisper_lang or "auto"
         if ai_model is None:
             from llm_providers import get_clipper_ai_model
             ai_model = get_clipper_ai_model()
@@ -857,9 +921,10 @@ class Clipper:
             try:
                 if srt_candidates:
                     print(colored(f"[+] Using provided SRT subtitles for source {source_id}", "green"))
-                    transcript = parse_srt_file(srt_candidates[0], video_path=video_path)
+                    transcript = parse_srt_file(srt_candidates[0], video_path=video_path, language=whisper_lang)
                 else:
-                    transcript = transcribe_video_local(video_path, language=language, model_size=model_size)
+                    transcript = transcribe_video_local(video_path, language=whisper_lang, model_size=model_size)
+                    print(colored(f"[+] Transcribed source {source_id} in '{transcript.language}' (requested: {display_lang})", "green"))
             except NoSpeechDetected as e:
                 results.append({
                     "source_id": source_id,
@@ -899,6 +964,7 @@ class Clipper:
                 "video_path": video_path,
                 "status": "success",
                 "duration": transcript.duration,
+                "language": transcript.language,
             })
 
         _check_cancelled(self.project.id)
@@ -1123,16 +1189,38 @@ class Clipper:
             face_y = clip.face_y if clip.face_y is not None else 0.35
 
         source_w, source_h = get_video_dimensions(video_path)
-        crop_x, crop_y, crop_w, crop_h = smart_crop_coordinates(
-            face_x, face_y, source_w, source_h, target_w, target_h
-        )
+        # Face TRACKING crop: sample faces across the clip and pan the 9:16
+        # window to follow the speaker. Falls back to the static face-centered
+        # crop when no face is found (or detection is unavailable).
+        from .FaceDetector import build_tracking_crop_filter
+        try:
+            face_track = self.face_detector.get_face_track(
+                video_path, clip.start_time, clip.end_time, n_samples=6,
+            )
+        except Exception as e:
+            print(colored(f"[*] Face tracking failed, using static crop: {e}", "yellow"))
+            face_track = [(0.0, face_x, face_y, False)]
+        tracked_any = any(f for (_, _, _, f) in face_track)
+        if tracked_any:
+            crop_expr, crop_w, crop_h, crop_x, crop_y = build_tracking_crop_filter(
+                face_track, source_w, source_h, target_w, target_h, clip.duration,
+            )
+            # Persist the track average for preview/thumbnail positioning.
+            clip.face_x = sum(fx for (_, fx, _, f) in face_track if f) / max(1, sum(1 for (_, _, _, f) in face_track if f))
+            clip.face_y = sum(fy for (_, _, fy, f) in face_track if f) / max(1, sum(1 for (_, _, _, f) in face_track if f))
+            print(colored(f"[+] Face tracking crop for clip {clip.id} ({len(face_track)} samples)", "green"))
+        else:
+            crop_x, crop_y, crop_w, crop_h = smart_crop_coordinates(
+                face_x, face_y, source_w, source_h, target_w, target_h
+            )
+            crop_expr = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}"
 
         raw_clip_path = os.path.join(output_dir, f"{clip.id}_raw.mp4")
         if os.path.exists(raw_clip_path):
             os.remove(raw_clip_path)
 
         crop_filter = (
-            f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+            f"{crop_expr},"
             f"scale={target_w}:{target_h},"
             f"setsar=1,format=yuv420p"
         )
@@ -1155,18 +1243,45 @@ class Clipper:
             raw_clip_path,
         ]
 
-        try:
-            result = subprocess.run(crop_cmd, capture_output=True, text=True, timeout=300)
-            if result.returncode != 0 or not os.path.exists(raw_clip_path):
+        def _run_crop(cmd: List[str]) -> bool:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0 and os.path.exists(raw_clip_path) and os.path.getsize(raw_clip_path) > 0:
+                    return True
                 print(colored(f"[-] FFmpeg crop failed: {result.stderr[-200:]}", "red"))
-                if os.path.exists(raw_clip_path):
-                    os.remove(raw_clip_path)
-                return None
-        except Exception as e:
-            print(colored(f"[-] Crop error: {e}", "red"))
+            except Exception as e:
+                print(colored(f"[-] Crop error: {e}", "red"))
             if os.path.exists(raw_clip_path):
-                os.remove(raw_clip_path)
-            return None
+                try:
+                    os.remove(raw_clip_path)
+                except Exception:
+                    pass
+            return False
+
+        if not _run_crop(crop_cmd):
+            # Animated tracking expressions are rejected by some ffmpeg builds
+            # (quoted if() syntax) — retry once with the static fallback crop
+            # so a render never fails purely because of tracking.
+            if tracked_any:
+                print(colored("[*] Retrying crop with static fallback (tracking expression rejected)", "yellow"))
+                fb_x, fb_y, fb_w, fb_h = smart_crop_coordinates(
+                    face_x, face_y, source_w, source_h, target_w, target_h
+                )
+                fb_filter = (
+                    f"crop={fb_w}:{fb_h}:{fb_x}:{fb_y},"
+                    f"scale={target_w}:{target_h},"
+                    f"setsar=1,format=yuv420p"
+                )
+                fb_cmd = list(crop_cmd)
+                try:
+                    vf_idx = fb_cmd.index("-vf") + 1
+                    fb_cmd[vf_idx] = fb_filter
+                except ValueError:
+                    pass
+                if not _run_crop(fb_cmd):
+                    return None
+            else:
+                return None
 
         # Optional B-roll overlay (Pexels) — before captions so captions stay on top
         if getattr(self.project.template, "broll_enabled", False) and getattr(self.project.template, "broll_keyword", ""):
@@ -1226,6 +1341,8 @@ class Clipper:
                 template=self.project.template,
                 face_x=face_x,
                 face_y=face_y,
+                target_w=target_w,
+                target_h=target_h,
             )
 
             if os.path.exists(raw_clip_path):

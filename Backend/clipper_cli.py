@@ -4,7 +4,7 @@ CLIPPER CLI — batch processing from the terminal.
 
 Usage:
   python clipper_cli.py create --name "My Project" --url https://youtube.com/watch?v=...
-  python clipper_cli.py process --project PROJECT_ID [--language en] [--model-size base]
+  python clipper_cli.py process --project PROJECT_ID [--language auto] [--model-size base]
   python clipper_cli.py select  --project PROJECT_ID [--max-clips 7]
   python clipper_cli.py render  --project PROJECT_ID --clip CLIP_ID
   python clipper_cli.py export  --project PROJECT_ID [--clips id1,id2] [--format shorts] [--quality high]
@@ -227,7 +227,8 @@ def main():
 
     p = sub.add_parser("process", help="Download + transcribe sources")
     p.add_argument("--project", required=True)
-    p.add_argument("--language", default="en")
+    p.add_argument("--language", default="auto",
+                   help="'auto' (default) lets Whisper detect the video language; or pass an ISO code e.g. es, de")
     p.add_argument("--model-size", default=None)
     p.add_argument("--max-clips", type=int, default=7)
     p.add_argument("--auto-select", action="store_true", default=True)

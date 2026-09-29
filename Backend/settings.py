@@ -60,6 +60,12 @@ fontOptions = {
 }
 
 # Subtitle Templates
+#
+# Shadow fields (shadow_color / shadow_blur / shadow_offset_x / shadow_offset_y)
+# are in generate-pipeline px at 1920px frame height. The ffmpeg burn path
+# ignores them (fill + outline only); the studio editor renders them as
+# canvas drop-shadows/glows (scaled to stage height) so glow presets like
+# neon and modern_glow actually glow.
 subtitleTemplates = {
     "current": "classic",
     "options": [
@@ -71,7 +77,11 @@ subtitleTemplates = {
             "stroke_color": "black",
             "stroke_width": 5,
             "fontsize": 100,
-            "position": "center,bottom"
+            "position": "center,bottom",
+            "shadow_color": "black",
+            "shadow_blur": 4,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 2
         },
         {
             "value": "modern_glow",
@@ -81,7 +91,11 @@ subtitleTemplates = {
             "stroke_color": "#00FFFF",
             "stroke_width": 3,
             "fontsize": 90,
-            "position": "center,center"
+            "position": "center,center",
+            "shadow_color": "#00FFFF",
+            "shadow_blur": 12,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 0
         },
         {
             "value": "bold_outline",
@@ -91,7 +105,11 @@ subtitleTemplates = {
             "stroke_color": "black",
             "stroke_width": 8,
             "fontsize": 110,
-            "position": "center,bottom"
+            "position": "center,bottom",
+            "shadow_color": "black",
+            "shadow_blur": 5,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 3
         },
         {
             "value": "minimal",
@@ -101,7 +119,11 @@ subtitleTemplates = {
             "stroke_color": "black",
             "stroke_width": 2,
             "fontsize": 60,
-            "position": "center,bottom"
+            "position": "center,bottom",
+            "shadow_color": "black",
+            "shadow_blur": 2,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 1
         },
         {
             "value": "cinematic",
@@ -111,7 +133,11 @@ subtitleTemplates = {
             "stroke_color": "black",
             "stroke_width": 4,
             "fontsize": 80,
-            "position": "center,bottom"
+            "position": "center,bottom",
+            "shadow_color": "black",
+            "shadow_blur": 4,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 2
         },
         {
             "value": "neon",
@@ -121,7 +147,11 @@ subtitleTemplates = {
             "stroke_color": "#FF1493",
             "stroke_width": 3,
             "fontsize": 95,
-            "position": "center,center"
+            "position": "center,center",
+            "shadow_color": "#FF1493",
+            "shadow_blur": 16,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 0
         },
         {
             "value": "social_viral",
@@ -131,7 +161,11 @@ subtitleTemplates = {
             "stroke_color": "black",
             "stroke_width": 6,
             "fontsize": 105,
-            "position": "center,bottom"
+            "position": "center,bottom",
+            "shadow_color": "black",
+            "shadow_blur": 5,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 2
         },
         {
             "value": "floating",
@@ -141,7 +175,11 @@ subtitleTemplates = {
             "stroke_color": "#000000",
             "stroke_width": 4,
             "fontsize": 85,
-            "position": "center,center"
+            "position": "center,center",
+            "shadow_color": "#000000",
+            "shadow_blur": 6,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 3
         },
         {
             "value": "news_ticker",
@@ -151,7 +189,11 @@ subtitleTemplates = {
             "stroke_color": "#FF0000",
             "stroke_width": 5,
             "fontsize": 75,
-            "position": "center,top"
+            "position": "center,top",
+            "shadow_color": "black",
+            "shadow_blur": 4,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 2
         },
         {
             "value": "karaoke_highlight",
@@ -161,7 +203,11 @@ subtitleTemplates = {
             "stroke_color": "#FF00FF",
             "stroke_width": 4,
             "fontsize": 95,
-            "position": "center,top"
+            "position": "center,top",
+            "shadow_color": "#FF00FF",
+            "shadow_blur": 10,
+            "shadow_offset_x": 0,
+            "shadow_offset_y": 0
         },
     ]
 }

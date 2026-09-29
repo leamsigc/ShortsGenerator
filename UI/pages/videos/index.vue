@@ -56,6 +56,7 @@ const instagramVideos = ref<VideoItem[]>([])
 const clipperVideos = ref<ClipperVideoItem[]>([])
 const downloads = ref<DownloadItem[]>([])
 const loading = ref(true)
+const activeTab = ref<Category>('generated')
 const scheduleModal = ref(false)
 const selectedVideo = ref<VideoItem | null>(null)
 const scheduleDate = ref<number | null>(null)
@@ -258,6 +259,38 @@ const confirmDelete = async (category: Category, item: VideoItem | ClipperVideoI
 
 const isDeleting = (category: Category, filename: string) => deletingKey.value === `${category}:${filename}`
 
+// — Clear whole active tab (with n-popconfirm) —
+const clearingTab = ref(false)
+
+const countFor = (tab: Category) =>
+  tab === 'generated' ? videos.value.length
+  : tab === 'instagram' ? instagramVideos.value.length
+  : tab === 'clipper' ? clipperVideos.value.length
+  : downloads.value.length
+
+const activeTabCount = computed(() => countFor(activeTab.value))
+
+const confirmClearTab = async () => {
+  const category = activeTab.value
+  clearingTab.value = true
+  try {
+    await $fetch(`${API_BASE()}/api/video/clear-category`, { method: 'POST', body: { category } })
+    if (category === 'generated') {
+      videos.value = []
+    } else if (category === 'instagram') {
+      instagramVideos.value = []
+    } else if (category === 'clipper') {
+      clipperVideos.value = []
+    } else {
+      downloads.value = []
+    }
+  } catch (e: any) {
+    console.error('Clear tab failed', e)
+  } finally {
+    clearingTab.value = false
+  }
+}
+
 const deleteButtonClass = (disabled: boolean) => [
   'h-9 w-9 rounded-lg border border-clipper-ink/12 dark:border-white/10 bg-white dark:bg-neutral-800 flex items-center justify-center text-clipper-ink/60 dark:text-white/60',
   disabled ? 'opacity-50' : 'hover:border-clipper-ink/20 dark:hover:border-white/20 hover:text-clipper-ink',
@@ -287,16 +320,35 @@ onMounted(fetchVideos)
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-[30px] font-bold leading-tight text-clipper-ink dark:text-white tracking-tight">Videos</h1>
-      <p class="text-sm text-clipper-ink/60 dark:text-white/60 mt-1">Your rendered Shorts, CLIPPER exports, Instagram renders and downloads — ready to schedule or delete</p>
+    <div class="flex items-end justify-between gap-3">
+      <div>
+        <h1 class="text-[30px] font-bold leading-tight text-clipper-ink dark:text-white tracking-tight">Videos</h1>
+        <p class="text-sm text-clipper-ink/60 dark:text-white/60 mt-1">Your rendered Shorts, CLIPPER exports, Instagram renders and downloads — ready to schedule or delete</p>
+      </div>
+      <n-popconfirm
+        :positive-text="`Clear ${activeTabCount}`"
+        negative-text="Keep"
+        @positive-click="confirmClearTab"
+      >
+        <template #trigger>
+          <button
+            class="h-9 px-4 rounded-lg border border-red-500/40 text-red-500 font-semibold text-sm hover:bg-red-500/10 flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+            :disabled="loading || clearingTab || activeTabCount === 0"
+            :aria-label="`Clear all videos from ${activeTab}`"
+          >
+            <Icon name="ph:trash" size="15" />
+            {{ clearingTab ? 'Clearing…' : `Clear ${activeTab} (${activeTabCount})` }}
+          </button>
+        </template>
+        Delete all {{ activeTabCount }} video{{ activeTabCount === 1 ? '' : 's' }} from '{{ activeTab }}'? This cannot be undone.
+      </n-popconfirm>
     </div>
 
     <div v-if="loading" class="flex justify-center items-center min-h-[200px]">
       <n-spin size="large" />
     </div>
 
-    <n-tabs v-else type="line" animated>
+    <n-tabs v-else v-model:value="activeTab" type="line" animated>
       <!-- ───── Generated ───── -->
       <n-tab-pane name="generated">
         <template #tab>

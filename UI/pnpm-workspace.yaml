@@ -1,0 +1,2 @@
+patchedDependencies:
+  '@elah/core': patches/@elah__core.patch

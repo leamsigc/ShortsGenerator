@@ -40,6 +40,12 @@ export interface CaptionSpec {
   fontWeight: "normal" | "bold"
   textAlign: "left" | "center" | "right"
   y: number
+  strokeColor?: string
+  strokeWidth?: number
+  textShadowColor?: string
+  textShadowBlur?: number
+  textShadowOffsetX?: number
+  textShadowOffsetY?: number
 }
 
 const props = withDefaults(defineProps<{
@@ -74,6 +80,19 @@ const message = useMessage()
 const elah: ElahEditorInstance = useElahEditor({ fps: props.fps, stage: props.stage })
 
 const mounted = ref(false)
+
+// ---- Editor fullscreen (whole shell, not just the preview) -----------------
+const editorRootEl = ref<HTMLElement | null>(null)
+const isFullscreen = ref(false)
+const onEditorFullscreenChange = () => {
+  isFullscreen.value = document.fullscreenElement === editorRootEl.value
+}
+const toggleEditorFullscreen = () => {
+  const root = editorRootEl.value
+  if (!root || !document.fullscreenEnabled) return
+  if (document.fullscreenElement) void document.exitFullscreen()
+  else void root.requestFullscreen().catch(() => { /* denied — stay windowed */ })
+}
 
 const trackIdOf = (kind: "video" | "audio" | "elements") =>
   elah.tracks.value.find(t => t.kind === kind)?.id ?? ""
@@ -131,6 +150,17 @@ const addCaptions = () => {
       })
       elah.updateClip(clip.id, clip.trackId, {
         textAnimation: { in: "fade", out: "fade", durationFrames: 8 },
+        ...(cap.strokeColor && (cap.strokeWidth ?? 0) > 0
+          ? { strokeColor: cap.strokeColor, strokeWidth: cap.strokeWidth }
+          : {}),
+        ...(cap.textShadowColor
+          ? {
+              textShadowColor: cap.textShadowColor,
+              textShadowBlur: cap.textShadowBlur ?? 0,
+              textShadowOffsetX: cap.textShadowOffsetX ?? 0,
+              textShadowOffsetY: cap.textShadowOffsetY ?? 0,
+            }
+          : {}),
       })
     }
     elah.selectNone()
@@ -138,6 +168,7 @@ const addCaptions = () => {
 }
 
 onMounted(() => {
+  document.addEventListener("fullscreenchange", onEditorFullscreenChange)
   buildInitialTimeline()
   initialSnapshot = elah.saveProject()
   elah.seek(0)
@@ -159,6 +190,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener("fullscreenchange", onEditorFullscreenChange)
   clearTimeout(saveTimer)
   clearTimeout(noticeTimer)
   elah.dispose()
@@ -229,6 +261,7 @@ const notice = (text: string) => {
   noticeTimer = setTimeout(() => { noticeText.value = "" }, 1600)
 }
 const onInserted = (name: string) => notice(`Added ${name}`)
+const onApplied = (name: string, count: number) => notice(`Applied ${name} to ${count} clip${count === 1 ? "" : "s"}`)
 const onComposed = () => notice("AI composition added")
 
 // Timeline zoom (raw px/frame; the log-scale slider lives in TimelineControls).
@@ -274,13 +307,15 @@ defineExpose({ elah })
 </script>
 
 <template>
-  <div class="flex flex-col h-[calc(100vh-64px)] min-h-[560px] bg-white dark:bg-neutral-900 overflow-hidden">
+  <div ref="editorRootEl" class="flex flex-col h-[calc(100vh-64px)] min-h-[560px] bg-white dark:bg-neutral-900 overflow-hidden">
     <EditorHeader
       v-model:show-code="showCode"
       v-model:show-trace="showTrace"
       :elah="elah"
+      :is-fullscreen="isFullscreen"
       @back="goBack"
       @export="showExport = true"
+      @toggle-fullscreen="toggleEditorFullscreen"
     />
     <CodePanel v-model:show="showCode" :elah="elah" />
     <TracePanel v-model:show="showTrace" />
@@ -329,7 +364,7 @@ defineExpose({ elah })
           <StockMediaPanel v-if="activePanel === 'videos'" :elah="elah" mode="videos" class="flex-1 min-h-0" @inserted="onInserted" />
           <StockMediaPanel v-else-if="activePanel === 'photos'" :elah="elah" mode="photos" class="flex-1 min-h-0" @inserted="onInserted" />
           <AudioPanel v-else-if="activePanel === 'audio'" :elah="elah" class="flex-1 min-h-0" @inserted="onInserted" />
-          <ElementsPanel v-else-if="activePanel === 'elements'" :elah="elah" class="flex-1 min-h-0" @inserted="onInserted" />
+          <ElementsPanel v-else-if="activePanel === 'elements'" :elah="elah" class="flex-1 min-h-0" @inserted="onInserted" @applied="onApplied" />
           <AgenticPanel v-else :elah="elah" class="flex-1 min-h-0" @composed="onComposed" />
         </div>
 

@@ -4,13 +4,18 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@elah/core':
+    hash: a4543e38ea9541df0a83a14ea03c9e554edd11baffaf7068345040fe11db516f
+    path: patches/@elah__core.patch
+
 importers:
 
   .:
     dependencies:
       '@elah/core':
         specifier: ^0.4.1
-        version: 0.4.1
+        version: 0.4.1(patch_hash=a4543e38ea9541df0a83a14ea03c9e554edd11baffaf7068345040fe11db516f)
       '@pinia/nuxt':
         specifier: ^0.9.0
         version: 0.9.0(magicast@0.5.2)(pinia@2.3.1(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3)))
@@ -6270,7 +6275,7 @@ snapshots:
 
   '@dxup/unimport@0.1.2': {}
 
-  '@elah/core@0.4.1':
+  '@elah/core@0.4.1(patch_hash=a4543e38ea9541df0a83a14ea03c9e554edd11baffaf7068345040fe11db516f)':
     dependencies:
       immer: 10.2.0
       mediabunny: 1.48.0

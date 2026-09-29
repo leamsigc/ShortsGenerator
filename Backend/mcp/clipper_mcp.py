@@ -97,7 +97,8 @@ class ClipperMCPServer:
                     "type": "object",
                     "properties": {
                         "project_id": {"type": "string"},
-                        "language": {"type": "string", "default": "en"},
+                        "language": {"type": "string", "default": "auto",
+                                       "description": "'auto' (default) lets Whisper detect the video language; or an ISO code e.g. es"},
                     },
                     "required": ["project_id"],
                 },
@@ -283,7 +284,7 @@ class ClipperMCPServer:
 
     async def _handle_process_project(self, args: Dict[str, Any]) -> Dict[str, Any]:
         project_id = args["project_id"]
-        language = args.get("language", "en")
+        language = args.get("language", "auto")
         model_size = args.get("model_size")
 
         project = project_store.get_project(project_id)

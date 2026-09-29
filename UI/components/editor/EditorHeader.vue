@@ -9,6 +9,7 @@ defineProps<{
   elah: ElahEditor
   showCode: boolean
   showTrace: boolean
+  isFullscreen: boolean
 }>()
 
 const emit = defineEmits<{
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   "update:showCode": [value: boolean]
   "update:showTrace": [value: boolean]
   export: []
+  toggleFullscreen: []
 }>()
 </script>
 
@@ -58,8 +60,22 @@ const emit = defineEmits<{
       </n-tooltip>
     </div>
 
-    <!-- Right: Code / Trace / Export -->
+    <!-- Right: Fullscreen / Code / Trace / Export -->
     <div class="flex items-center gap-1.5 justify-end">
+      <n-tooltip trigger="hover">
+        <template #trigger>
+          <n-button
+            size="small"
+            quaternary
+            :aria-label="isFullscreen ? 'Exit fullscreen' : 'Fullscreen editor'"
+            :title="isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen editor'"
+            @click="emit('toggleFullscreen')"
+          >
+            <template #icon><Icon :name="isFullscreen ? 'ph:arrows-in' : 'ph:arrows-out'" size="15" /></template>
+          </n-button>
+        </template>
+        {{ isFullscreen ? "Exit fullscreen" : "Fullscreen editor" }}
+      </n-tooltip>
       <n-button
         size="small"
         quaternary

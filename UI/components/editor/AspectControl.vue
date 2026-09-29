@@ -1,4 +1,4 @@
-<script lang="ts" setup">
+<script lang="ts" setup>
 /**
  * AspectControl — aspect-ratio segmented control centered above the preview.
  * Each option shows a small glyph shaped like its ratio; click → elah.setStage.

@@ -83,6 +83,50 @@ const opacityModel = computed<number>({
 })
 const pctTooltip = (v: number) => `${Math.round(v * 100)}%`
 
+// ---- Shadow (drop-shadow / glow behind the glyphs) ----
+const shadowEnabled = computed(() => clip.value?.textShadowColor != null)
+const toggleShadow = (on: boolean) => {
+  if (on) {
+    put({ textShadowColor: "#000000", textShadowBlur: 6, textShadowOffsetX: 0, textShadowOffsetY: 2 })
+  } else {
+    put({ textShadowColor: undefined, textShadowBlur: undefined, textShadowOffsetX: undefined, textShadowOffsetY: undefined })
+  }
+}
+const shadowColorModel = computed<string, string | null>({
+  get: () => clip.value?.textShadowColor ?? "#000000",
+  set: (v) => preview({ textShadowColor: v ?? "#000000" }),
+})
+const shadowBlurModel = computed<number, number | null>({
+  get: () => clip.value?.textShadowBlur ?? 6,
+  set: (v) => preview({ textShadowBlur: Math.max(0, v ?? 0) }),
+})
+const shadowXModel = computed<number, number | null>({
+  get: () => clip.value?.textShadowOffsetX ?? 0,
+  set: (v) => preview({ textShadowOffsetX: v ?? 0 }),
+})
+const shadowYModel = computed<number, number | null>({
+  get: () => clip.value?.textShadowOffsetY ?? 2,
+  set: (v) => preview({ textShadowOffsetY: v ?? 0 }),
+})
+
+// ---- Background (pill behind the text block) ----
+const bgEnabled = computed(() => clip.value?.textBackgroundColor != null)
+const toggleBg = (on: boolean) => {
+  if (on) {
+    put({ textBackgroundColor: "#000000", textBackgroundOpacity: 0.85 })
+  } else {
+    put({ textBackgroundColor: undefined, textBackgroundOpacity: undefined })
+  }
+}
+const bgColorModel = computed<string, string | null>({
+  get: () => clip.value?.textBackgroundColor ?? "#000000",
+  set: (v) => preview({ textBackgroundColor: v ?? "#000000" }),
+})
+const bgOpacityModel = computed<number>({
+  get: () => clip.value?.textBackgroundOpacity ?? 0.85,
+  set: (v) => preview({ textBackgroundOpacity: v }),
+})
+
 // ---- Transform models ----
 const scaleModel = computed<number>({
   get: () => tf.value.scale,
@@ -253,6 +297,83 @@ const animDurationModel = computed<number, number | null>({
               @mouseup="commit('Edit opacity')"
               @touchend="commit('Edit opacity')"
             />
+          </div>
+
+          <div class="space-y-3 rounded-lg border border-clipper-ink/08 dark:border-white/08 p-3">
+            <n-checkbox :checked="shadowEnabled" @update:checked="toggleShadow">
+              <span class="text-[11px] font-medium text-clipper-ink dark:text-white">Text shadow</span>
+            </n-checkbox>
+            <template v-if="shadowEnabled">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium text-clipper-ink dark:text-white">Shadow color</label>
+                <n-color-picker
+                  v-model:value="shadowColorModel"
+                  size="small"
+                  :show-alpha="false"
+                  @update:show="(show: boolean) => !show && commit('Edit text shadow')"
+                />
+              </div>
+              <div>
+                <div class="mb-1.5 flex items-center justify-between">
+                  <label class="text-[11px] font-medium text-clipper-ink dark:text-white">Blur</label>
+                  <span class="font-mono text-[10px] tabular-nums text-clipper-ink/50 dark:text-white/50">{{ Math.round(shadowBlurModel ?? 0) }}px</span>
+                </div>
+                <n-slider
+                  v-model:value="shadowBlurModel"
+                  :min="0"
+                  :max="30"
+                  :step="1"
+                  @mouseup="commit('Edit text shadow')"
+                  @touchend="commit('Edit text shadow')"
+                />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="mb-1.5 block text-[11px] font-medium text-clipper-ink dark:text-white">Offset X</label>
+                  <n-input-number v-model:value="shadowXModel" size="small" :min="-30" :max="30" class="w-full" @blur="commit('Edit text shadow')">
+                    <template #suffix>px</template>
+                  </n-input-number>
+                </div>
+                <div>
+                  <label class="mb-1.5 block text-[11px] font-medium text-clipper-ink dark:text-white">Offset Y</label>
+                  <n-input-number v-model:value="shadowYModel" size="small" :min="-30" :max="30" class="w-full" @blur="commit('Edit text shadow')">
+                    <template #suffix>px</template>
+                  </n-input-number>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="space-y-3 rounded-lg border border-clipper-ink/08 dark:border-white/08 p-3">
+            <n-checkbox :checked="bgEnabled" @update:checked="toggleBg">
+              <span class="text-[11px] font-medium text-clipper-ink dark:text-white">Background pill</span>
+            </n-checkbox>
+            <template v-if="bgEnabled">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium text-clipper-ink dark:text-white">Background color</label>
+                <n-color-picker
+                  v-model:value="bgColorModel"
+                  size="small"
+                  :show-alpha="false"
+                  @update:show="(show: boolean) => !show && commit('Edit text background')"
+                />
+              </div>
+              <div>
+                <div class="mb-1.5 flex items-center justify-between">
+                  <label class="text-[11px] font-medium text-clipper-ink dark:text-white">Background opacity</label>
+                  <span class="font-mono text-[10px] tabular-nums text-clipper-ink/50 dark:text-white/50">{{ pctTooltip(bgOpacityModel) }}</span>
+                </div>
+                <n-slider
+                  v-model:value="bgOpacityModel"
+                  :min="0"
+                  :max="1"
+                  :step="0.01"
+                  :format-tooltip="pctTooltip"
+                  @mouseup="commit('Edit text background')"
+                  @touchend="commit('Edit text background')"
+                />
+              </div>
+            </template>
           </div>
         </template>
 
