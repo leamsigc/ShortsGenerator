@@ -300,6 +300,26 @@ def g4f_cookie_status_route():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@clipper_bp.route("/llm/cookies/refresh", methods=["POST"])
+def g4f_cookies_refresh_route():
+    """Nuke cached cookies and re-import fresh ones from the browser."""
+    from gpt import refresh_g4f_cookies
+    try:
+        return jsonify({"status": "success", "data": refresh_g4f_cookies()})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@clipper_bp.route("/llm/g4f-providers", methods=["GET"])
+def g4f_providers_route():
+    """List installed g4f providers + models for the settings dropdowns."""
+    from gpt import list_g4f_providers
+    try:
+        return jsonify({"status": "success", "data": {"providers": list_g4f_providers()}})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @clipper_bp.route("/projects/<project_id>/publish-records", methods=["GET"])
 def list_publish_records(project_id):
     """List publish/schedule records for a project."""

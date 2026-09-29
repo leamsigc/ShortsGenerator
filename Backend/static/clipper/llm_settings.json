@@ -1,8 +1,10 @@
 {
-  "provider": "gemini",
+  "provider": "g4f",
   "base_url": "",
   "api_key": "",
   "model": "",
   "outline_enabled": true,
-  "g4f_use_cookies": true
+  "g4f_use_cookies": true,
+  "g4f_provider": "Cloudflare",
+  "g4f_model": "kimi-k2.6"
 }

@@ -25,7 +25,7 @@ client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
 g4f.version_checking = False
 g4f.debug.logging = True
 
-G4F_GEMINI_MAX_ATTEMPTS = 3
+G4F_GEMINI_MAX_ATTEMPTS = 2
 
 def _generate_via_google_sdk(prompt: str) -> str:
     if client is None:
@@ -33,7 +33,7 @@ def _generate_via_google_sdk(prompt: str) -> str:
     print(colored("[*] Using Google AI SDK (GOOGLE_API_KEY)", "cyan"))
     # NOTE: 'gemini-3.5-flash' is a g4f-only alias and does not exist in the
     # official API. Use a real official model (override with GEMINI_SDK_MODEL).
-    model = os.getenv('GEMINI_SDK_MODEL', 'gemini-2.5-flash')
+    model = os.getenv('GEMINI_SDK_MODEL', 'gemini-3.6-flash')
     return client.models.generate_content(
         model=model,
         contents=prompt
@@ -88,19 +88,83 @@ def _generate_via_g4f_gemini(prompt: str, attempt: int) -> str:
 
     g4f_client = G4FClient(provider=Provider.Gemini)
     response = g4f_client.chat.completions.create(
-        model="gemini-3.5-flash",
+        model="gemini-3.6-flash",
         messages=[{"role": "user", "content": prompt}],
         web_search=False
     )
     return response.choices[0].message.content
 
-# Cookie-free g4f chain: verified working without browser cookies or API
-# keys (Dec 2026-era g4f 7.9.x; free mirrors change fast, so try in order).
+# Cookie-free g4f chain, verified live against the installed g4f release.
+# Free mirrors change fast, so the user's selection is tried first and the
+# rest serve as fallbacks in order.
 G4F_FREE_CHAIN = [
-    ("WeWordle", "gpt-4o-mini"),
-    ("WeWordle", "deepseek"),
+    ("DeepAI", "gemini-2.5-flash-lite"),
+    ("DeepAI", "deepseek-v3.2"),
+    ("Perplexity", "auto"),
     ("Yqcloud", "gpt-4"),
 ]
+
+def resolve_g4f_provider(name: str):
+    """Resolve a g4f provider class by name (top-level or needs_auth)."""
+    import importlib
+    for pkg in ("g4f.Provider", "g4f.Provider.needs_auth"):
+        try:
+            mod = importlib.import_module(f"{pkg}.{name}")
+        except ImportError:
+            continue
+        provider = getattr(mod, name, None)
+        if isinstance(provider, type) and hasattr(provider, "working"):
+            return provider
+    raise ValueError(f"Unknown g4f provider: {name!r}")
+
+
+def list_g4f_providers() -> list:
+    """Enumerate installed g4f providers for the settings dropdowns."""
+    import pkgutil
+    import inspect
+    import g4f.Provider as top
+    try:
+        import g4f.Provider.needs_auth as auth
+        packages = [(top, False), (auth, True)]
+    except ImportError:
+        packages = [(top, False)]
+    skip_modules = {'base_provider', 'helper', 'template', 'retry', 'route',
+                    'any_provider', 'audio', 'search', 'local', 'openai', 'qwen',
+                    'hf_space', 'image', 'video'}
+    providers = []
+    for pkg, needs_auth_pkg in packages:
+        try:
+            modules = list(pkgutil.iter_modules(pkg.__path__))
+        except Exception:
+            continue
+        for _, mod_name, _ in modules:
+            if mod_name.startswith('_') or mod_name in skip_modules:
+                continue
+            try:
+                mod = __import__(f"{pkg.__name__}.{mod_name}", fromlist=["*"])
+            except Exception:
+                continue
+            for _, cls in inspect.getmembers(mod, inspect.isclass):
+                if cls.__module__ != mod.__name__ or not hasattr(cls, 'working'):
+                    continue
+                if not getattr(cls, 'working', False):
+                    continue
+                models = getattr(cls, 'models', None)
+                if isinstance(models, dict):
+                    models = list(models.keys())
+                models = [str(m) for m in (models or [])][:80]
+                name = cls.__name__
+                providers.append({
+                    "id": name,
+                    "label": getattr(cls, 'label', name),
+                    "url": getattr(cls, 'url', ''),
+                    "default_model": str(getattr(cls, 'default_model', '') or ''),
+                    "models": models,
+                    # Gemini web needs browser cookies despite needs_auth=False.
+                    "needs_cookies": bool(getattr(cls, 'needs_auth', False)) or needs_auth_pkg or 'Gemini' in name,
+                })
+    providers.sort(key=lambda p: (p["needs_cookies"], p["id"]))
+    return providers
 
 G4F_COOKIE_RENEW_STEPS = [
     "In Firefox, open gemini.google.com and log in with your Google account.",
@@ -109,20 +173,56 @@ G4F_COOKIE_RENEW_STEPS = [
     "No luck? Turn OFF 'Use browser cookies' to use cookie-free providers instead.",
 ]
 
-def _generate_via_g4f_free(prompt: str) -> str:
-    """g4f without cookies and without API keys. Raises on total failure."""
-    from g4f.client import Client as G4FClient
-    import importlib
-    last_error: Exception = ValueError("No g4f cookie-free provider attempted")
-    for provider_name, model in G4F_FREE_CHAIN:
+def _call_with_timeout(fn, timeout_sec: int, label: str):
+    """Run fn() but give up after timeout_sec (hung providers fail fast).
+
+    The worker thread can't be killed, so it may linger in the background —
+    the caller moves on regardless instead of hanging forever.
+    """
+    import concurrent.futures
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        fut = ex.submit(fn)
         try:
-            mod = importlib.import_module(f"g4f.Provider.{provider_name}")
-            provider = getattr(mod, provider_name)
+            return fut.result(timeout=timeout_sec)
+        except concurrent.futures.TimeoutError as e:
+            raise TimeoutError(f"{label} timed out after {timeout_sec}s") from e
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+
+
+def _generate_via_g4f_free(prompt: str) -> str:
+    """g4f without cookies and without API keys. Raises on total failure.
+
+    Tries the provider/model selected in Settings first, then the fallback
+    chain.
+    """
+    from g4f.client import Client as G4FClient
+    from llm_providers import get_llm_settings
+    settings = get_llm_settings()
+    selected = (settings.get("g4f_provider") or "").strip()
+    selected_model = (settings.get("g4f_model") or "").strip()
+    attempts = []
+    if selected:
+        attempts.append((selected, selected_model))
+    for provider_name, model in G4F_FREE_CHAIN:
+        if (provider_name, model) not in attempts:
+            attempts.append((provider_name, model))
+    last_error: Exception = ValueError("No g4f cookie-free provider attempted")
+    for provider_name, model in attempts:
+        try:
+            provider = resolve_g4f_provider(provider_name)
+            if not model:
+                model = str(getattr(provider, 'default_model', '') or '')
             print(colored(f"[*] g4f cookie-free: {provider_name}/{model}", "cyan"))
             g4f_client = G4FClient(provider=provider)
-            response = g4f_client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
+            # 45s each: a hung mirror must not stall generation forever.
+            response = _call_with_timeout(
+                lambda: g4f_client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+                45, f"{provider_name}/{model}",
             )
             text = response.choices[0].message.content
             if text and text.strip():
@@ -185,6 +285,48 @@ def check_g4f_cookie_status() -> dict:
             "renew_steps": G4F_COOKIE_RENEW_STEPS}
 
 
+def refresh_g4f_cookies() -> dict:
+    """Nuke everything cached and re-import cookies fresh from the browser.
+
+    Drops the in-process cookie cache, deletes the on-disk rotation cache
+    (auth_Gemini.json), resets the Gemini provider session, then re-reads
+    Firefox's cookie store and reports the live status.
+    """
+    import os
+    from g4f.cookies import get_cookies, set_cookies, get_cookies_dir
+    from g4f.Provider.needs_auth import Gemini
+    cleared = []
+    set_cookies('.google.com')
+    cleared.append('memory cache')
+    try:
+        auth_file = os.path.join(get_cookies_dir(), 'auth_Gemini.json')
+        if os.path.exists(auth_file):
+            os.remove(auth_file)
+            cleared.append('auth_Gemini.json')
+    except Exception as e:
+        print(colored(f"[-] Could not delete cookie rotation cache: {e}", "yellow"))
+    for attr in ('_snlm0e', '_sid', '_metadata_cookie_key', '_metadata_auth_user',
+                 '_account_status'):
+        try:
+            setattr(Gemini, attr, None)
+        except Exception:
+            pass
+    for attr in ('_account_models',):
+        try:
+            setattr(Gemini, attr, {})
+        except Exception:
+            pass
+    for attr in ('_metadata_fetched_at', '_account_models_fetched_at'):
+        try:
+            setattr(Gemini, attr, 0)
+        except Exception:
+            pass
+    fresh = get_cookies('.google.com', False, True)
+    status = check_g4f_cookie_status()
+    print(colored(f"[+] Cookies refreshed: cleared {', '.join(cleared)}, re-imported {len(fresh)} from browser", "green"))
+    return {"cleared": cleared, "cookies_found": len(fresh), "status": status}
+
+
 def generate_response(prompt: str, ai_model: str) -> str:
     """
     Generate a script for a video, depending on the subject of the video.
@@ -207,8 +349,10 @@ def generate_response(prompt: str, ai_model: str) -> str:
         if ai_model in ('gemmini', 'gemini-api'):
             return _generate_via_google_sdk(prompt)
 
-        from llm_providers import use_g4f_cookies
-        cookies_ok = use_g4f_cookies()
+        from llm_providers import use_g4f_cookies, get_llm_settings
+        settings = get_llm_settings()
+        selected = (settings.get("g4f_provider") or "").strip()
+        cookies_ok = use_g4f_cookies(settings)
 
         if not cookies_ok:
             # Toggle OFF: no browser cookies, no env keys — cookie-free g4f only.
@@ -222,13 +366,35 @@ def generate_response(prompt: str, ai_model: str) -> str:
                     "Firefox Google login), or switch provider to gemini/ollama/openai."
                 ) from e
 
+        # Explicit non-Gemini selection goes FIRST (each attempt capped at
+        # 60s): otherwise Test/Generate burns 120s+ on the cookie path even
+        # when the user picked a different provider.
+        if selected and selected != "Gemini":
+            try:
+                print(colored(f"[*] g4f selected provider first: {selected}", "cyan"))
+                return _generate_via_g4f_free(prompt)
+            except Exception as e:
+                print(colored(f"[-] selected g4f provider failed, trying cookie path: {e}", "yellow"))
+
         last_error: Exception = ValueError("No g4f Gemini attempt was made")
         for attempt in range(1, G4F_GEMINI_MAX_ATTEMPTS + 1):
             try:
-                return _generate_via_g4f_gemini(prompt, attempt)
+                # 100s cap: g4f's own stall detector fires at 120s, and its
+                # metadata calls have no timeout at all — bound the whole
+                # attempt so one stuck session can't eat the 5-min UI budget.
+                return _call_with_timeout(
+                    lambda: _generate_via_g4f_gemini(prompt, attempt),
+                    100, f"g4f Gemini attempt {attempt}",
+                )
             except Exception as e:
                 last_error = e
                 print(colored(f"[-] g4f Gemini attempt {attempt} failed: {e}", "yellow"))
+                if "idle" in str(e).lower() or "timed out" in str(e).lower():
+                    # Hung stream or hung metadata = throttled/flagged session.
+                    # Retrying the same session won't help — go to fallbacks now
+                    # instead of burning more stalls.
+                    print(colored("[*] Cookie session stalled, skipping remaining cookie attempts", "yellow"))
+                    break
                 if attempt < G4F_GEMINI_MAX_ATTEMPTS:
                     time.sleep(2 * attempt)
 

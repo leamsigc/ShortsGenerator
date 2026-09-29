@@ -1,7 +1,20 @@
 import os
 import subprocess
 import requests
+import sys
 from datetime import datetime
+
+# Fail fast on the wrong interpreter: native deps (torch/torchaudio,
+# onnxruntime, numpy pins) break confusingly anywhere but Python 3.11.
+# Any 3.11 env works (.venv per onBoard Alternative A); the conda env is
+# just the recommended one.
+if sys.version_info[:2] != (3, 11):
+    print(f"ERROR: Backend requires Python 3.11, you are on {sys.version.split()[0]} "
+          f"({sys.executable}). Activate the env first: conda activate shortsgenerator")
+    sys.exit(1)
+if "shortsgenerator" not in sys.prefix and ".venv" not in sys.prefix:
+    print(f"WARNING: unexpected interpreter {sys.executable}. "
+          f"Use `conda activate shortsgenerator` (or the repo .venv) to avoid broken native deps.")
 from utils import *
 from dotenv import load_dotenv
 
@@ -65,6 +78,7 @@ def create_folders():
         "static/assets/temp",
         "static/assets/subtitles",
         "static/assets/custom_audio",
+        "static/assets/qwen_refs",
         "static/generated_videos",
         "static/generated_videos/instagram",
         "static/clipper",
@@ -407,7 +421,7 @@ def search_and_download():
     if tts_lang:
         from settings import update_tts_settings
         update_tts_settings({"tts_lang": tts_lang})
-    videoClass.GenerateVoice(voice, custom_audio_path=custom_audio_path, audio_start_time=audio_start_time, audio_end_time=audio_end_time, quality=tts_quality, speed=tts_speed)
+    videoClass.GenerateVoice(voice, custom_audio_path=custom_audio_path, audio_start_time=audio_start_time, audio_end_time=audio_end_time, quality=tts_quality, speed=tts_speed, qwen_mode=data.get("qwen_mode"), qwen_speaker=data.get("qwen_speaker"), qwen_lang=data.get("qwen_lang"), qwen_instruct=data.get("qwen_instruct"), qwen_design_prompt=data.get("qwen_design_prompt"), qwen_clone_ref=data.get("qwen_clone_ref"), qwen_clone_text=data.get("qwen_clone_text"))
 
     videoClass.CombineVideos()
 
@@ -454,6 +468,143 @@ def search_and_download():
                 "subtitles": final_subtitles_path,
                 # Should remove the complete path and just leave the 
                 "finalVideo": final_video_path,
+                "ttsEngine": videoClass.tts_engine_used,
+                "metadata": {
+                    "title": videoClass.video_title,
+                    "description": videoClass.video_description,
+                    "tags": videoClass.video_tags if hasattr(videoClass, 'video_tags') else [],
+                    "post_content": videoClass.video_post_content if hasattr(videoClass, 'video_post_content') else "",
+                    "suggested_schedule": videoClass.suggested_schedule if hasattr(videoClass, 'suggested_schedule') else ""
+                }
+            }
+        }
+    )
+
+# Regenerate only the audio + video (no AI calls).
+# Reuses the caller's script / selected videos / settings, re-runs
+# TTS + subtitles + combine + render, and re-attaches the provided
+# metadata instead of calling GenerateMetadata() (4x LLM calls).
+@app.route("/api/regenerate-video", methods=["POST"])
+def regenerate_video():
+    global GENERATING
+    GENERATING = True
+
+    print(colored("[+] Received regenerate-video request (no AI metadata)...", "green"))
+
+    data = request.get_json()
+    search_terms = data.get("search", [])
+    script = data.get("script", "")
+    ai_model = data.get("aiModel", "g4f")
+    voice = data.get("voice") or "en_us_001"
+    selectedVideoUrls = data.get("selectedVideoUrls", [])
+    directVideoPaths = data.get("directVideoPaths", [])
+    use_music = data.get("useMusic", False)
+
+    subtitles_position = data.get("subtitlesPosition", "center,bottom")
+    subtitle_template = data.get("subtitleTemplate", "classic")
+    aspect_ratio = data.get("aspectRatio", "9:16")
+    custom_subtitle = data.get("customSubtitle", "")
+    custom_audio_path = data.get("customAudioPath", "")
+    audio_start_time = data.get("audioStartTime", 0)
+    audio_end_time = data.get("audioEndTime", 0)
+    images = data.get("images", [])
+    image_duration = data.get("imageDuration", 5.0)
+    image_durations = data.get("imageDurations", [])
+
+    # Reused metadata — never regenerated via AI here.
+    reused = data.get("metadata") or {}
+
+    videoClass = Shorts("", 1, ai_model, '', script_template=data.get("scriptTemplate", ""))
+    videoClass.search_terms = search_terms
+    videoClass.final_script = script
+    videoClass.subtitles_position = subtitles_position
+    videoClass.subtitle_template = subtitle_template
+    videoClass.aspect_ratio = aspect_ratio
+    videoClass.custom_subtitle = custom_subtitle
+    videoClass.clip_duration = int(data.get("clipDuration", 10))
+
+    if directVideoPaths and len(directVideoPaths) > 0:
+        videoClass.video_paths = directVideoPaths
+        print(colored(f"[+] Reusing {len(directVideoPaths)} pre-downloaded video(s)", "green"))
+    else:
+        videoClass.DownloadVideos(selectedVideoUrls)
+
+    if images:
+        temp_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "temp"))
+        resolved_images = []
+        resolved_durations = []
+        for i, img in enumerate(images):
+            img_path = os.path.join(temp_dir, os.path.basename(img))
+            if os.path.exists(img_path):
+                resolved_images.append(img_path)
+            elif os.path.exists(img):
+                resolved_images.append(img)
+            dur = float(image_durations[i]) if i < len(image_durations) and image_durations[i] else float(image_duration)
+            resolved_durations.append(dur)
+        videoClass.image_paths = resolved_images
+        videoClass.image_durations = resolved_durations
+        videoClass.image_duration = float(image_duration) if image_duration else 5.0
+
+    tts_quality = data.get("quality", 8)
+    tts_speed = data.get("speed", 1.05)
+    tts_lang = data.get("tts_lang", None)
+    if tts_lang:
+        from settings import update_tts_settings
+        update_tts_settings({"tts_lang": tts_lang})
+    videoClass.GenerateVoice(voice, custom_audio_path=custom_audio_path, audio_start_time=audio_start_time, audio_end_time=audio_end_time, quality=tts_quality, speed=tts_speed, qwen_mode=data.get("qwen_mode"), qwen_speaker=data.get("qwen_speaker"), qwen_lang=data.get("qwen_lang"), qwen_instruct=data.get("qwen_instruct"), qwen_design_prompt=data.get("qwen_design_prompt"), qwen_clone_ref=data.get("qwen_clone_ref"), qwen_clone_text=data.get("qwen_clone_text"))
+
+    videoClass.CombineVideos()
+
+    # Skip GenerateMetadata() (AI) — re-attach caller-provided metadata
+    # and write the .json sidecar for the new video file.
+    videoClass.video_title = reused.get("title", "")
+    videoClass.video_description = reused.get("description", "")
+    videoClass.video_tags = reused.get("tags", [])
+    videoClass.video_post_content = reused.get("post_content", "")
+    videoClass.suggested_schedule = reused.get("suggested_schedule", "")
+    try:
+        videoClass.WriteMetadataToFile(
+            videoClass.video_title,
+            videoClass.video_description,
+            videoClass.video_tags,
+            videoClass.video_post_content,
+            videoClass.suggested_schedule,
+        )
+    except Exception as e:
+        print(colored(f"[-] Could not write reused metadata sidecar: {e}", "yellow"))
+
+    if use_music:
+        videoClass.AddMusic(True)
+
+    videoClass.Stop()
+
+    if videoClass.get_final_video_path is None:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Video regeneration was cancelled.",
+                "data": [],
+            }
+        ), 500
+
+    if use_music and videoClass.get_final_music_video_path:
+        final_video_raw = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "generated_videos", videoClass.get_final_music_video_path))
+    else:
+        final_video_raw = videoClass.get_final_video_path
+
+    final_video_path = "/static" + final_video_raw.split("/static")[1]
+    final_audio_path = "/static" + videoClass.get_tts_path.split("/static")[1] if videoClass.get_tts_path else None
+    final_subtitles_path = "/static" + videoClass.get_subtitles_path.split("/static")[1] if videoClass.get_subtitles_path else None
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": "Video regenerated without AI calls!",
+            "data": {
+                "finalAudio": final_audio_path,
+                "subtitles": final_subtitles_path,
+                "finalVideo": final_video_path,
+                "ttsEngine": videoClass.tts_engine_used,
                 "metadata": {
                     "title": videoClass.video_title,
                     "description": videoClass.video_description,
@@ -1063,6 +1214,12 @@ def get_models():
         result["voiceStyles"] = get_supertonic_voices_detailed()
         result["languages"] = get_supertonic_languages()
         result["qualityPresets"] = get_supertonic_quality_presets()
+    if engine == "qwen3":
+        result["voiceStyles"] = get_qwen_voices_detailed()
+        result["languages"] = get_qwen_languages()
+        result["modes"] = get_qwen_modes()
+        result["models"] = get_qwen_models()
+        result["presets"] = get_qwen_presets()
     return jsonify(
         {
         "status": "success",
@@ -1141,6 +1298,12 @@ def get_tts_voices():
         result["voiceStyles"] = get_supertonic_voices_detailed()
         result["languages"] = get_supertonic_languages()
         result["qualityPresets"] = get_supertonic_quality_presets()
+    if engine == "qwen3":
+        result["voiceStyles"] = get_qwen_voices_detailed()
+        result["languages"] = get_qwen_languages()
+        result["modes"] = get_qwen_modes()
+        result["models"] = get_qwen_models()
+        result["presets"] = get_qwen_presets()
     return jsonify(
         {
         "status": "success",
@@ -1148,6 +1311,79 @@ def get_tts_voices():
         "data": result
         }
     )
+
+
+# Qwen3-TTS: audition any mode/voice without running the full pipeline.
+# Body: { text, mode, speaker, language, instruct, design_prompt }
+# Returns a playable /static URL saved under static/assets/temp/.
+@app.route("/api/tts/qwen/preview", methods=["POST"])
+def qwen_preview():
+    try:
+        from qwen3_tts import preview as qwen_preview_tts
+    except ImportError:
+        return jsonify({
+            "status": "error",
+            "message": "qwen-tts is not installed. Run: pip install -r requirements.txt",
+        }), 400
+    data = request.get_json() or {}
+    text = (data.get("text") or "").strip()[:300]
+    if not text:
+        return jsonify({"status": "error", "message": "No text provided"}), 400
+    settings_snapshot = get_tts_settings()
+    temp_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "temp"))
+    os.makedirs(temp_dir, exist_ok=True)
+    out_path = os.path.join(temp_dir, f"qwen_preview_{uuid4()}.wav")
+    try:
+        qwen_preview_tts(
+            text,
+            filename=out_path,
+            mode=data.get("mode") or settings_snapshot.get("qwen_mode", "custom"),
+            speaker=data.get("speaker") or settings_snapshot.get("qwen_speaker", "Ryan"),
+            language=data.get("language") or settings_snapshot.get("qwen_lang", "English"),
+            instruct=data.get("instruct", settings_snapshot.get("qwen_instruct", "")),
+            design_prompt=data.get("design_prompt", settings_snapshot.get("qwen_design_prompt", "")),
+            ref_audio=data.get("ref_audio") or settings_snapshot.get("qwen_clone_ref", ""),
+            ref_text=data.get("ref_text", settings_snapshot.get("qwen_clone_text", "")),
+        )
+    except Exception as e:
+        print(colored(f"[-] Qwen3 preview failed: {e}", "red"))
+        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({
+        "status": "success",
+        "message": "Preview generated",
+        "data": {"url": f"/static/assets/temp/{os.path.basename(out_path)}"},
+    })
+
+
+# Qwen3-TTS voice clone: upload a ~3s+ reference clip. The stored path is
+# saved into ttsSettings.qwen_clone_ref so GenerateVoice can reuse it.
+@app.route("/api/tts/qwen/clone-reference", methods=["POST"])
+def qwen_clone_reference():
+    ref_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "qwen_refs"))
+    os.makedirs(ref_dir, exist_ok=True)
+
+    if "file" not in request.files:
+        return jsonify({"status": "error", "message": "No file provided"}), 400
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"status": "error", "message": "No file selected"}), 400
+
+    allowed_ext = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma"}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_ext:
+        return jsonify({"status": "error", "message": f"Unsupported audio format: {ext}"}), 400
+
+    filename = f"qwen_ref_{uuid4()}{ext}"
+    save_path = os.path.join(ref_dir, filename)
+    file.save(save_path)
+    rel_path = os.path.join("static", "assets", "qwen_refs", filename)
+    update_tts_settings({"qwen_clone_ref": rel_path})
+    print(colored(f"[+] Qwen3 clone reference saved: {filename}", "green"))
+    return jsonify({
+        "status": "success",
+        "message": "Reference clip saved",
+        "data": {"path": rel_path, "url": f"/static/assets/qwen_refs/{filename}"},
+    })
 
 
 @app.route("/api/magicsync/accounts", methods=["POST"])

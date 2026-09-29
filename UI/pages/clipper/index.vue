@@ -10,7 +10,7 @@
  * @version 0.0.1
  */
 import { useClipperStore, EXPORT_FORMATS, EXPORT_QUALITIES } from "~/stores/ClipperStore"
-import type { PublishRecord, OutlineItem, LlmSettings } from "~/stores/ClipperStore"
+import type { PublishRecord, OutlineItem } from "~/stores/ClipperStore"
 import { useStorage } from "@vueuse/core"
 import ClipperProjectManager from "~/components/clipper/ProjectManager.vue"
 
@@ -299,94 +299,6 @@ const handleDeletePublishRecord = async (recordId: string) => {
   }
 }
 
-// LLM provider settings (global, shown in settings view)
-const llmForm = ref<Partial<LlmSettings>>({
-  provider: "gemini",
-  base_url: "",
-  api_key: "",
-  model: "",
-  outline_enabled: false,
-  g4f_use_cookies: true,
-})
-const llmMaskedKey = ref("")
-const llmSaving = ref(false)
-const llmTesting = ref(false)
-const llmTestResult = ref<{ ok: boolean; detail: string } | null>(null)
-const cookieStatus = ref<{ ok: boolean; reason: string; detail: string; renew_steps: string[] } | null>(null)
-const cookieChecking = ref(false)
-
-const checkCookies = async () => {
-  cookieChecking.value = true
-  try {
-    cookieStatus.value = await clipperStore.fetchG4fCookieStatus()
-  } finally {
-    cookieChecking.value = false
-  }
-}
-const showCookieBanner = computed(() =>
-  (llmForm.value.provider || "") === "g4f" && llmForm.value.g4f_use_cookies !== false
-)
-
-const llmProviderOptions = computed(() => clipperStore.llmProviders)
-const showLlmBaseUrl = computed(() => ["openai", "ollama", "qwen"].includes(llmForm.value.provider || ""))
-const showLlmCookies = computed(() => (llmForm.value.provider || "") === "g4f")
-const llmBaseUrlPlaceholder = computed(() =>
-  llmForm.value.provider === "ollama" ? "http://localhost:11434/v1" : "https://api.openai.com/v1"
-)
-
-const loadLlmSettings = async () => {
-  const data = await clipperStore.fetchLlmSettings()
-  if (data) {
-    llmForm.value = { ...data.settings, api_key: "" }
-    llmMaskedKey.value = data.settings.api_key
-    if (data.settings.provider === "g4f" && data.settings.g4f_use_cookies !== false) {
-      checkCookies()
-    }
-  }
-}
-
-const llmPayload = () => {
-  const payload: Record<string, any> = {
-    provider: llmForm.value.provider,
-    base_url: llmForm.value.base_url || "",
-    model: llmForm.value.model || "",
-    outline_enabled: !!llmForm.value.outline_enabled,
-    g4f_use_cookies: llmForm.value.g4f_use_cookies !== false,
-  }
-  if (llmForm.value.api_key) payload.api_key = llmForm.value.api_key
-  return payload
-}
-
-const handleSaveLlm = async () => {
-  llmSaving.value = true
-  try {
-    const settings = await clipperStore.updateLlmSettings(llmPayload())
-    if (settings) {
-      llmMaskedKey.value = settings.api_key
-      llmForm.value = { ...settings, api_key: "" }
-      message.success("AI settings saved")
-    }
-  } catch (e) {
-    console.error("Failed to save AI settings", e)
-    message.error("Failed to save AI settings")
-  } finally {
-    llmSaving.value = false
-  }
-}
-
-const handleTestLlm = async () => {
-  llmTesting.value = true
-  llmTestResult.value = null
-  try {
-    const r = await clipperStore.testLlmConnection(llmPayload())
-    llmTestResult.value = { ok: r.ok, detail: r.detail }
-  } catch (e: any) {
-    llmTestResult.value = { ok: false, detail: e?.data?.data?.detail || e?.message || "Connection failed" }
-  } finally {
-    llmTesting.value = false
-  }
-}
-
 // Add source dialog for Sources view
 const showAddSource = ref(false)
 const pendingUrl = ref("")
@@ -524,7 +436,6 @@ onMounted(async () => {
     await clipperStore.fetchProjectClips(clipperStore.currentProject.id)
     await clipperStore.loadTranscripts(clipperStore.currentProject.id)
   }
-  loadLlmSettings()
 })
 </script>
 
@@ -987,100 +898,16 @@ onMounted(async () => {
 
       <!-- ───── View: SETTINGS ───── -->
       <div v-else-if="clipperStore.activeView === 'settings'">
-        <!-- AI Model Provider (global LLM config) -->
-        <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-5 space-y-4 mb-6">
+        <!-- AI Model Provider lives in Global Settings (/settings) -->
+        <div class="bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 rounded-xl p-5 mb-6">
           <div class="flex items-center gap-2">
             <Icon name="ph:cpu" size="16" class="text-clipper-green" />
             <h3 class="text-sm font-semibold text-clipper-ink dark:text-white">AI Model Provider</h3>
           </div>
-          <p class="text-xs text-clipper-ink/60 dark:text-white/60">Global LLM used for ranking, hook titles and outline generation. Gemini (official API) is the default — paste a free key from makersuite.google.com/app/apikey. g4f is cookie-based and breaks when browser cookies expire.</p>
-          <div class="space-y-3">
-            <div>
-              <label class="block text-xs font-medium text-clipper-ink/60 dark:text-white/60 mb-1">Provider</label>
-              <n-select
-                v-model:value="llmForm.provider"
-                class="w-full"
-                :options="llmProviderOptions.map(p => ({ label: p === 'gemini' ? 'gemini (Default)' : p === 'g4f' ? 'g4f (Free, needs browser cookies)' : p, value: p }))"
-              />
-            </div>
-            <div v-if="showCookieBanner" class="rounded-lg border p-3 text-xs"
-              :class="cookieStatus && !cookieStatus.ok
-                ? 'border-red-500/40 bg-red-500/10'
-                : 'border-clipper-ink/12 dark:border-white/10 bg-clipper-ink/[0.03] dark:bg-white/[0.03]'">
-              <div v-if="cookieChecking" class="text-clipper-ink/60 dark:text-white/60">Checking browser cookies…</div>
-              <div v-else-if="cookieStatus && !cookieStatus.ok">
-                <p class="font-semibold text-red-500">Browser cookies are outdated</p>
-                <p class="text-clipper-ink/70 dark:text-white/70 mt-1">{{ cookieStatus.detail }}</p>
-                <ol class="list-decimal ml-4 mt-2 space-y-1 text-clipper-ink/70 dark:text-white/70">
-                  <li v-for="(step, i) in cookieStatus.renew_steps" :key="i">{{ step }}</li>
-                </ol>
-              </div>
-              <div v-else-if="cookieStatus && cookieStatus.ok" class="text-clipper-green">
-                Cookies look fresh — {{ cookieStatus.detail }}
-              </div>
-              <button
-                class="mt-2 h-8 px-3 rounded-lg border border-clipper-ink/12 dark:border-white/10 text-xs font-medium hover:border-clipper-ink/25 disabled:opacity-50"
-                :disabled="cookieChecking"
-                @click="checkCookies"
-              >
-                {{ cookieChecking ? "Checking…" : "Check cookies" }}
-              </button>
-            </div>
-            <div v-if="showLlmBaseUrl">
-              <label class="block text-xs font-medium text-clipper-ink/60 dark:text-white/60 mb-1">Base URL</label>
-              <input
-                v-model="llmForm.base_url"
-                :placeholder="llmBaseUrlPlaceholder"
-                class="w-full h-10 px-3 rounded-lg border border-clipper-ink/12 dark:border-white/10 bg-white dark:bg-neutral-800 text-sm text-clipper-ink dark:text-white focus:outline-none focus:border-clipper-green"
-              />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-clipper-ink/60 dark:text-white/60 mb-1">API Key</label>
-              <input
-                v-model="llmForm.api_key"
-                type="password"
-                :placeholder="llmMaskedKey ? llmMaskedKey : 'Not set'"
-                class="w-full h-10 px-3 rounded-lg border border-clipper-ink/12 dark:border-white/10 bg-white dark:bg-neutral-800 text-sm text-clipper-ink dark:text-white focus:outline-none focus:border-clipper-green"
-              />
-              <p class="text-[11px] text-clipper-ink/40 dark:text-white/40 mt-1">Leave empty to keep the existing key.</p>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-clipper-ink/60 dark:text-white/60 mb-1">Model</label>
-              <input
-                v-model="llmForm.model"
-                placeholder="e.g. gemini-3.5-flash, gemini-2.5-flash, gpt-4o-mini (empty = provider default)"
-                class="w-full h-10 px-3 rounded-lg border border-clipper-ink/12 dark:border-white/10 bg-white dark:bg-neutral-800 text-sm text-clipper-ink dark:text-white focus:outline-none focus:border-clipper-green"
-              />
-            </div>
-            <n-checkbox v-model:checked="llmForm.g4f_use_cookies" v-if="showLlmCookies">
-              <span class="text-sm font-medium text-clipper-ink dark:text-white">Use browser cookies</span>
-              <span class="text-xs text-clipper-ink/40 dark:text-white/40">— g4f reads Firefox Google cookies for Gemini. Turn OFF to use cookie-free providers instead (no login, no API key).</span>
-            </n-checkbox>
-            <n-checkbox v-model:checked="llmForm.outline_enabled">
-              <span class="text-sm font-medium text-clipper-ink dark:text-white">Outline generation</span>
-              <span class="text-xs text-clipper-ink/40 dark:text-white/40">— generate topic timeline per transcript</span>
-            </n-checkbox>
-            <div v-if="llmTestResult" class="text-sm" :class="llmTestResult.ok ? 'text-clipper-green' : 'text-red-500'">
-              <Icon :name="llmTestResult.ok ? 'ph:check-circle' : 'ph:x-circle'" size="14" class="inline -mt-0.5" />
-              {{ llmTestResult.ok ? 'Connection OK' : 'Connection failed' }} — {{ llmTestResult.detail }}
-            </div>
-            <div class="flex gap-2 pt-1">
-              <button
-                class="h-10 px-4 rounded-lg border border-clipper-ink/12 dark:border-white/10 bg-white dark:bg-neutral-800 text-sm font-medium text-clipper-ink dark:text-white hover:border-clipper-ink/20 dark:hover:border-white/20 disabled:opacity-50"
-                :disabled="llmTesting"
-                @click="handleTestLlm"
-              >
-                {{ llmTesting ? 'Testing…' : 'Test connection' }}
-              </button>
-              <button
-                class="h-10 px-4 rounded-lg bg-clipper-green text-clipper-ink font-semibold text-sm hover:opacity-90 disabled:opacity-50"
-                :disabled="llmSaving"
-                @click="handleSaveLlm"
-              >
-                {{ llmSaving ? 'Saving…' : 'Save' }}
-              </button>
-            </div>
-          </div>
+          <p class="text-xs text-clipper-ink/60 dark:text-white/60 mt-1">Provider, API key and cookie settings moved to Global Settings.</p>
+          <NuxtLink to="/settings" class="mt-3 inline-flex h-9 px-4 rounded-lg bg-clipper-green text-clipper-ink font-semibold text-sm items-center">
+            Open AI settings
+          </NuxtLink>
         </div>
 
         <ClipperProjectSettings

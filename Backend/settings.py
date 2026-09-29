@@ -494,6 +494,18 @@ ttsSettings = {
     "tts_lang": "es",
     "tts_quality": 12,
     "tts_speed": 1.05,
+    # Qwen3-TTS (https://github.com/QwenLM/Qwen3-TTS)
+    # mode: "custom" (preset timbre + instruct steering)
+    #     | "design" (free-form voice from a description)
+    #     | "clone"  (3s+ reference clip + transcript)
+    "qwen_mode": "custom",
+    "qwen_speaker": "Ryan",
+    "qwen_lang": "English",
+    "qwen_instruct": "",
+    "qwen_design_prompt": "",
+    "qwen_clone_ref": "",
+    "qwen_clone_text": "",
+    "qwen_model": "",
 }
 
 imageSettings = {
@@ -544,10 +556,45 @@ def get_tiktok_voices() -> list:
     return available_voices()
 
 
+def get_qwen_voices() -> list:
+    from qwen3_tts import available_voices
+    return available_voices()
+
+
+def get_qwen_voices_detailed() -> dict:
+    from qwen3_tts import available_voices_detailed
+    return available_voices_detailed()
+
+
+def get_qwen_languages() -> list:
+    from qwen3_tts import available_languages
+    return available_languages()
+
+
+def get_qwen_modes() -> list:
+    from qwen3_tts import available_modes
+    return available_modes()
+
+
+def get_qwen_models() -> dict:
+    from qwen3_tts import available_models
+    return available_models()
+
+
+def get_qwen_presets() -> dict:
+    from qwen3_tts import available_instruct_presets, available_design_presets, available_characters
+    return {
+        "instructs": available_instruct_presets(),
+        "designs": available_design_presets(),
+        "characters": available_characters(),
+    }
+
+
 def get_all_voices() -> dict:
     return {
         "supertonic": get_supertonic_voices(),
         "tiktok": get_tiktok_voices(),
+        "qwen3": get_qwen_voices(),
     }
 
 
@@ -563,10 +610,25 @@ def is_tiktok_available() -> bool:
     return True
 
 
+def is_qwen_available() -> bool:
+    try:
+        from qwen3_tts import is_qwen_available
+        return is_qwen_available()
+    except Exception:
+        return False
+
+
 def get_tts_status() -> dict:
+    try:
+        from qwen3_tts import get_status_detail
+        qwen_detail = get_status_detail()
+        qwen_state = qwen_detail.get("state", "unavailable")
+    except Exception:
+        qwen_state = "unavailable"
     return {
         "supertonic": "healthy" if is_supertonic_available() else "unavailable",
         "tiktok": "available" if is_tiktok_available() else "unavailable",
+        "qwen3": qwen_state,
     }
 
 
@@ -574,15 +636,53 @@ def tts_with_fallback(text: str, voice: str, filename: str, **kwargs) -> dict:
     engine = get_tts_engine()
     result = {"engine": engine, "success": False, "error": None}
 
-    if engine == "supertonic":
+    if engine == "qwen3":
+        try:
+            from qwen3_tts import tts as qwen_tts
+
+            # Voice param doubles as speaker override (keeps /generate compatible:
+            # per-video voice select just works). Otherwise use saved settings.
+            try:
+                from qwen3_tts import available_voices as _qwen_voices
+                speaker = voice if voice in _qwen_voices() else ttsSettings.get("qwen_speaker", "Ryan")
+            except Exception:
+                speaker = ttsSettings.get("qwen_speaker", "Ryan")
+            qwen_tts(
+                text,
+                voice=kwargs.get("qwen_speaker", speaker),
+                filename=filename,
+                language=kwargs.get("qwen_lang", ttsSettings.get("qwen_lang", "English")),
+                instruct=kwargs.get("qwen_instruct", ttsSettings.get("qwen_instruct", "")),
+                mode=kwargs.get("qwen_mode", ttsSettings.get("qwen_mode", "custom")),
+                design_prompt=kwargs.get("qwen_design_prompt", ttsSettings.get("qwen_design_prompt", "")),
+                ref_audio=kwargs.get("qwen_clone_ref", ttsSettings.get("qwen_clone_ref", "")),
+                ref_text=kwargs.get("qwen_clone_text", ttsSettings.get("qwen_clone_text", "")),
+                model=kwargs.get("qwen_model", ttsSettings.get("qwen_model", "")),
+            )
+            result["success"] = True
+            print(colored("[+] Used Qwen3 TTS", "green"))
+            return result
+        except Exception as e:
+            print(colored(f"[-] Qwen3 TTS failed: {e}", "yellow"))
+            print(colored("[*] Falling back to Supertonic/TikTok", "yellow"))
+
+    if engine == "supertonic" or (engine == "qwen3" and not result["success"]):
         try:
             from supertonic_tts import tts as supertonic_tts
+            from supertonic_tts import VOICE_STYLES as _SUPERTONIC_STYLES
+            # Qwen speaker names (e.g. "Ryan") are not Supertonic voices —
+            # fall back to the saved Supertonic voice instead of failing.
+            st_voice = voice if voice in _SUPERTONIC_STYLES else ttsSettings.get("tts_voice", "M3")
             lang = kwargs.get("lang", ttsSettings.get("tts_lang", "en"))
             quality = kwargs.get("quality", ttsSettings.get("tts_quality", 8))
             speed = kwargs.get("speed", ttsSettings.get("tts_speed", 1.05))
-            supertonic_tts(text, voice=voice, lang=lang, total_steps=quality, speed=speed, filename=filename)
+            supertonic_tts(text, voice=st_voice, lang=lang, total_steps=quality, speed=speed, filename=filename)
             result["success"] = True
-            print(colored("[+] Used Supertonic TTS", "green"))
+            if result["engine"] != "supertonic":
+                print(colored(f"[!] Requested '{result['engine']}' failed — actually rendered with Supertonic ({st_voice})", "yellow"))
+                result["engine"] = "supertonic"
+            else:
+                print(colored("[+] Used Supertonic TTS", "green"))
             return result
         except Exception as e:
             print(colored(f"[-] Supertonic TTS failed: {e}", "yellow"))
@@ -590,10 +690,15 @@ def tts_with_fallback(text: str, voice: str, filename: str, **kwargs) -> dict:
 
     try:
         from tiktokvoice import tts as tiktok_tts
-        tiktok_tts(text, voice, filename)
+        from tiktokvoice import VOICES as _TIKTOK_VOICES
+        tt_voice = voice if voice in _TIKTOK_VOICES else "en_us_001"
+        tiktok_tts(text, tt_voice, filename)
+        if engine != "tiktok":
+            print(colored(f"[!] Requested '{engine}' failed — actually rendered with TikTok ({tt_voice})", "yellow"))
+        else:
+            print(colored("[+] Used TikTokTTS", "green"))
         result["engine"] = "tiktok"
         result["success"] = True
-        print(colored("[+] Used TikTokTTS (fallback)", "green"))
         return result
     except Exception as e:
         result["error"] = str(e)
@@ -615,7 +720,7 @@ def get_settings() -> dict:
         stroke_width: Number of pixels of the stroke
         subtitles_position: Position of the subtitles
     The TTS settings are:
-        preferred_tts: "supertonic" or "tiktok"
+        preferred_tts: "supertonic", "tiktok" or "qwen3"
         tts_voice: voice style (e.g. "M3")
         tts_lang: language code (e.g. "en")
         tts_quality: quality steps 5-12
@@ -662,7 +767,7 @@ def update_settings(new_settings: dict, settingType="FONT"):
         stroke_width: Number of pixels of the stroke
         subtitles_position: Position of the subtitles
     The TTS settings are:
-        preferred_tts: "supertonic" or "tiktok"
+        preferred_tts: "supertonic", "tiktok" or "qwen3"
         tts_voice: voice style (e.g. "M3")
         tts_lang: language code (e.g. "en")
         tts_quality: quality steps 5-12

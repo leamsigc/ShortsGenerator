@@ -76,6 +76,7 @@ class Shorts:
 
         # Audio and subtitles
         self.tts_path = None
+        self.tts_engine_used = None
         self.subtitles_path = None
 
         # Final video
@@ -333,7 +334,7 @@ class Shorts:
         # Write the metadata in a json file with the video title as the filename
         self.WriteMetadataToFile(self.video_title, self.video_description, self.video_tags, self.video_post_content, self.suggested_schedule)
         
-    def GenerateVoice(self, voice, custom_audio_path="", audio_start_time=0, audio_end_time=0, quality=None, speed=None):
+    def GenerateVoice(self, voice, custom_audio_path="", audio_start_time=0, audio_end_time=0, quality=None, speed=None, qwen_mode=None, qwen_speaker=None, qwen_lang=None, qwen_instruct=None, qwen_design_prompt=None, qwen_clone_ref=None, qwen_clone_text=None):
         print(colored(f"[X] Generating voice: {voice} ", "green"))
         global GENERATING
         self.voice = voice
@@ -372,6 +373,7 @@ class Shorts:
                 audio_clip.close()
                 self.tts_path = trimmed_path
                 paths = [AudioFileClip(self.tts_path)]
+                self.tts_engine_used = "custom"
                 print(colored(f"[+] Custom audio trimmed to {audio_start}-{audio_end}s", "green"))
             except Exception as e:
                 print(colored(f"[-] Error processing custom audio: {e}", "red"))
@@ -380,30 +382,49 @@ class Shorts:
         if not paths:
             engine = get_tts_engine()
 
-            if engine == "supertonic":
+            if engine in ("supertonic", "qwen3"):
                 if not GENERATING:
                     return jsonify({"status": "error", "message": "Video generation was cancelled.", "data": []})
 
                 tts_settings = get_tts_settings()
                 fileId = uuid4()
-                supertonic_path = os.path.join(temp_dir_path, f"{fileId}.mp3")
+                engine_path = os.path.join(temp_dir_path, f"{fileId}.mp3")
 
-                result = tts_with_fallback(
-                    self.final_script,
-                    self.voice,
-                    filename=supertonic_path,
-                    lang=tts_settings.get("tts_lang", "en"),
-                    quality=quality if quality is not None else tts_settings.get("tts_quality", 8),
-                    speed=speed if speed is not None else tts_settings.get("tts_speed", 1.05),
-                )
-
-                if result["success"] and os.path.exists(supertonic_path):
-                    audio_clip = AudioFileClip(supertonic_path)
-                    paths = [audio_clip]
-                    self.tts_path = supertonic_path
-                    print(colored(f"[+] Supertonic generated full audio ({len(sentences)} sentences in one call)", "green"))
+                if engine == "qwen3":
+                    # Per-request overrides (from /generate) win over saved settings.
+                    # self.voice doubles as speaker override when it names a Qwen timbre.
+                    result = tts_with_fallback(
+                        self.final_script,
+                        self.voice,
+                        filename=engine_path,
+                        qwen_mode=qwen_mode or tts_settings.get("qwen_mode", "custom"),
+                        qwen_speaker=qwen_speaker or tts_settings.get("qwen_speaker", "Ryan"),
+                        qwen_lang=qwen_lang or tts_settings.get("qwen_lang", "English"),
+                        qwen_instruct=qwen_instruct if qwen_instruct is not None else tts_settings.get("qwen_instruct", ""),
+                        qwen_design_prompt=qwen_design_prompt if qwen_design_prompt is not None else tts_settings.get("qwen_design_prompt", ""),
+                        qwen_clone_ref=qwen_clone_ref if qwen_clone_ref is not None else tts_settings.get("qwen_clone_ref", ""),
+                        qwen_clone_text=qwen_clone_text if qwen_clone_text is not None else tts_settings.get("qwen_clone_text", ""),
+                    )
+                    fail_msg = "[-] Qwen3 failed, using TikTok sentence-by-sentence fallback"
                 else:
-                    print(colored("[-] Supertonic failed, using TikTok sentence-by-sentence fallback", "yellow"))
+                    result = tts_with_fallback(
+                        self.final_script,
+                        self.voice,
+                        filename=engine_path,
+                        lang=tts_settings.get("tts_lang", "en"),
+                        quality=quality if quality is not None else tts_settings.get("tts_quality", 8),
+                        speed=speed if speed is not None else tts_settings.get("tts_speed", 1.05),
+                    )
+                    fail_msg = "[-] Supertonic failed, using TikTok sentence-by-sentence fallback"
+
+                if result["success"] and os.path.exists(engine_path):
+                    audio_clip = AudioFileClip(engine_path)
+                    paths = [audio_clip]
+                    self.tts_path = engine_path
+                    self.tts_engine_used = result.get("engine", engine)
+                    print(colored(f"[+] {self.tts_engine_used} generated full audio ({len(sentences)} sentences in one call)", "green"))
+                else:
+                    print(colored(fail_msg, "yellow"))
 
             # Fallback: TikTok sentence-by-sentence
             if not paths:
@@ -429,6 +450,7 @@ class Shorts:
                     print(colored(f"[X] Combining {len(paths)} sentence audio files", "green"))
                     final_audio = concatenate_audioclips(paths)
                     self.tts_path = os.path.join(temp_dir_path, f"{uuid4()}.mp3")
+                    self.tts_engine_used = "tiktok"
                     final_audio.write_audiofile(self.tts_path)
                 else:
                     print(colored("[-] No audio clips generated", "red"))

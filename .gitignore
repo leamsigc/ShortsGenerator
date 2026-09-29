@@ -19,6 +19,8 @@ Songs/
 node_modules
 /UI/.nuxt
 Backend/static/generated_videos
+Backend/static/assets/qwen_refs
+Backend/static/assets/temp/*
 Backend/data
 
 # Claude / Opencode local config (global skills are symlinked from ./skills/)

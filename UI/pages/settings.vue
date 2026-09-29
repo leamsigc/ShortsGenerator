@@ -22,6 +22,7 @@ interface VoiceStyle {
   name: string;
   description: string;
   gender: string;
+  kind?: string;
 }
 interface LanguageOption {
   code: string;
@@ -82,15 +83,43 @@ interface GlobalSettings {
   subtitleTemplates: SubtitleTemplates;
 }
 interface TTSSettings {
-  preferred_tts: "supertonic" | "tiktok";
+  preferred_tts: "supertonic" | "tiktok" | "qwen3";
   tts_voice: string;
   tts_lang: string;
   tts_quality: number;
   tts_speed: number;
+  qwen_mode?: string;
+  qwen_speaker?: string;
+  qwen_lang?: string;
+  qwen_instruct?: string;
+  qwen_design_prompt?: string;
+  qwen_clone_ref?: string;
+  qwen_clone_text?: string;
+  qwen_model?: string;
+}
+interface QwenMode {
+  value: string;
+  label: string;
+  description: string;
+}
+interface QwenPreset {
+  value: string;
+  label: string;
+}
+interface QwenCharacter {
+  value: string;
+  label: string;
+  mode: string;
+  language: string;
+  design_prompt: string;
+  instruct: string;
+  description: string;
 }
 
 import { useStorage } from "@vueuse/core";
 import { useClipperStore } from "~/stores/ClipperStore";
+import type { G4fProviderInfo } from "~/stores/ClipperStore";
+import type { CustomVoice } from "~/composables/useCustomVoices";
 
 interface MagicSyncBusiness {
   id: string
@@ -190,11 +219,13 @@ const { globalSettings } = useGlobalSettings();
 const ttsEngineOptions = [
   { label: "Supertonic TTS (Local)", value: "supertonic" },
   { label: "TikTok TTS (Cloud)", value: "tiktok" },
+  { label: "Qwen3 TTS (Local, Design/Clone)", value: "qwen3" },
 ];
 
-const ttsStatus = ref<{ supertonic: string; tiktok: string }>({
+const ttsStatus = ref<{ supertonic: string; tiktok: string; qwen3: string }>({
   supertonic: "unavailable",
   tiktok: "available",
+  qwen3: "unavailable",
 });
 
 const aiModelOptions = [
@@ -220,6 +251,37 @@ const selectedLang = ref("en");
 const selectedQuality = ref(8);
 const selectedSpeed = ref(1.05);
 
+// Qwen3-TTS state (custom / design / clone)
+const qwenModes = ref<QwenMode[]>([]);
+const qwenModels = ref<Record<string, string>>({});
+const qwenInstructPresets = ref<QwenPreset[]>([]);
+const qwenDesignPresets = ref<QwenPreset[]>([]);
+const qwenCharacters = ref<QwenCharacter[]>([]);
+const qwenMode = ref("custom");
+const qwenSpeaker = ref("Ryan");
+const qwenLang = ref("English");
+const qwenInstruct = ref("");
+const qwenDesignPrompt = ref("");
+const qwenModel = ref("");
+const qwenCloneRef = ref("");
+const qwenCloneText = ref("");
+const qwenCloning = ref(false);
+const qwenCloneError = ref("");
+const qwenRefInput = ref<HTMLInputElement | null>(null);
+const previewText = ref("Hey! This is my new voice for viral Shorts. Follow for more!");
+const previewLoading = ref(false);
+const previewUrl = ref("");
+const previewError = ref("");
+
+// My voices (IndexedDB, browser-side preset list)
+const { list: listCustomVoices, save: saveCustomVoice, remove: removeCustomVoice, toQwenParams } =
+  useCustomVoices();
+const customVoices = ref<CustomVoice[]>([]);
+const customVoiceName = ref("");
+const customSaveLoading = ref(false);
+const customSaveMsg = ref("");
+const customSaveOk = ref(false);
+
 async function loadVoices(engine: string) {
   voicesLoading.value = true;
   try {
@@ -229,13 +291,16 @@ async function loadVoices(engine: string) {
         voiceStyles?: Record<string, VoiceStyle>;
         languages?: LanguageOption[];
         qualityPresets?: QualityPreset[];
+        modes?: QwenMode[];
+        models?: Record<string, string>;
+        presets?: { instructs: QwenPreset[]; designs: QwenPreset[]; characters?: QwenCharacter[] };
       };
     }>(`${API_URL}/api/tts/voices?engine=${engine}`);
     const data = res.data;
     if (data.voiceStyles) {
       voiceStyles.value = data.voiceStyles;
       voiceOptions.value = data.voices.map((v) => ({
-        label: `${v} - ${data.voiceStyles?.[v]?.name || v} (${data.voiceStyles?.[v]?.gender || ""})`,
+        label: `${data.voiceStyles?.[v]?.kind === "character" ? "🐶 " : ""}${v} - ${data.voiceStyles?.[v]?.name || v} (${data.voiceStyles?.[v]?.gender || ""})`,
         value: v,
         description: data.voiceStyles?.[v]?.description,
       }));
@@ -244,6 +309,14 @@ async function loadVoices(engine: string) {
     }
     if (data.languages) languageOptions.value = data.languages;
     if (data.qualityPresets) qualityPresets.value = data.qualityPresets;
+    if (data.modes) qwenModes.value = data.modes;
+    if (data.models) qwenModels.value = data.models;
+    if (data.presets) {
+      qwenInstructPresets.value = data.presets.instructs || [];
+      qwenDesignPresets.value = data.presets.designs || [];
+      qwenCharacters.value = data.presets.characters || [];
+    }
+    mergeCustomVoicesIntoOptions(engine);
   } catch (error) {
     console.error("Failed to load voices:", error);
   } finally {
@@ -254,9 +327,13 @@ async function loadVoices(engine: string) {
 async function loadTtsStatus() {
   try {
     const { data } = await $fetch<{
-      data: { supertonic: string; tiktok: string };
+      data: { supertonic: string; tiktok: string; qwen3: string };
     }>(`${API_URL}/api/tts/status`);
-    ttsStatus.value = data;
+    ttsStatus.value = {
+      supertonic: data.supertonic || "unavailable",
+      tiktok: data.tiktok || "available",
+      qwen3: (data as Record<string, string>).qwen3 || "unavailable",
+    };
   } catch (error) {
     console.error("Failed to load TTS status:", error);
   }
@@ -286,6 +363,14 @@ selectedVoice.value = mainSettings?.ttsSettings?.tts_voice || "M3";
 selectedLang.value = mainSettings?.ttsSettings?.tts_lang || "en";
 selectedQuality.value = mainSettings?.ttsSettings?.tts_quality || 8;
 selectedSpeed.value = mainSettings?.ttsSettings?.tts_speed || 1.05;
+qwenMode.value = mainSettings?.ttsSettings?.qwen_mode || "custom";
+qwenSpeaker.value = mainSettings?.ttsSettings?.qwen_speaker || "Ryan";
+qwenLang.value = mainSettings?.ttsSettings?.qwen_lang || "English";
+qwenInstruct.value = mainSettings?.ttsSettings?.qwen_instruct || "";
+qwenDesignPrompt.value = mainSettings?.ttsSettings?.qwen_design_prompt || "";
+qwenModel.value = mainSettings?.ttsSettings?.qwen_model || "";
+qwenCloneRef.value = mainSettings?.ttsSettings?.qwen_clone_ref || "";
+qwenCloneText.value = mainSettings?.ttsSettings?.qwen_clone_text || "";
 
 const aspectRatio = ref(mainSettings?.aspectRatioSettings?.current || "9:16");
 const aspectRatioOptions = ref(mainSettings?.aspectRatioSettings?.options || []);
@@ -298,6 +383,7 @@ const subtitleTemplateOptions = ref(mainSettings?.subtitleTemplates?.options || 
 
 await loadVoices(ttsEngine.value);
 await loadTtsStatus();
+await reloadCustomVoices();
 
 // g4f cookie toggle (same backend setting as Clipper → Settings → AI Model Provider)
 const clipperStore = useClipperStore();
@@ -306,6 +392,33 @@ const g4fSaving = ref(false);
 const g4fSaveError = ref("");
 const cookieStatus = ref<{ ok: boolean; reason: string; detail: string; renew_steps: string[] } | null>(null);
 const cookieChecking = ref(false);
+// Full AI provider form (canonical home — was in Clipper settings)
+const llmProvider = ref("gemini");
+const llmProvidersList = ref<string[]>(["gemini", "g4f", "openai", "ollama", "qwen"]);
+const llmBaseUrl = ref("");
+const llmApiKey = ref("");
+const llmMaskedKey = ref("");
+const llmModel = ref("");
+const llmOutline = ref(true);
+const llmSaving = ref(false);
+const llmTesting = ref(false);
+const llmTestAbort = ref<AbortController | null>(null);
+const llmTestResult = ref<{ ok: boolean; detail: string } | null>(null);
+const showLlmBaseUrl = computed(() => ["openai", "ollama", "qwen"].includes(llmProvider.value || ""));
+// g4f provider + model selection (populated from installed g4f release)
+const g4fProvidersList = ref<G4fProviderInfo[]>([]);
+const g4fProviderSel = ref("DeepAI");
+const g4fModelSel = ref("gemini-2.5-flash-lite");
+const g4fModels = computed(() => {
+  const entry = g4fProvidersList.value.find(p => p.id === g4fProviderSel.value);
+  const models = entry?.models?.length ? entry.models : (g4fModelSel.value ? [g4fModelSel.value] : []);
+  if (g4fModelSel.value && !models.includes(g4fModelSel.value)) return [g4fModelSel.value, ...models];
+  return models;
+});
+function onG4fProviderChange(id: string) {
+  const entry = g4fProvidersList.value.find(p => p.id === id);
+  if (entry && entry.default_model) g4fModelSel.value = entry.default_model;
+}
 async function checkCookies() {
   cookieChecking.value = true;
   try {
@@ -316,10 +429,101 @@ async function checkCookies() {
     cookieChecking.value = false;
   }
 }
+async function refreshCookies() {
+  cookieChecking.value = true;
+  try {
+    const res = await clipperStore.refreshG4fCookies();
+    if (res) cookieStatus.value = res.status;
+  } catch (e) {
+    console.error("Failed to refresh cookies:", e);
+  } finally {
+    cookieChecking.value = false;
+  }
+}
+
+function llmPayload() {
+  const payload: Record<string, any> = {
+    provider: llmProvider.value,
+    base_url: llmBaseUrl.value || "",
+    model: llmModel.value || "",
+    outline_enabled: !!llmOutline.value,
+    g4f_use_cookies: llmProvider.value === "g4f" ? g4fUseCookies.value : true,
+  };
+  if (llmProvider.value === "g4f") {
+    payload.g4f_provider = g4fProviderSel.value;
+    payload.g4f_model = g4fModelSel.value || "";
+  }
+  if (llmApiKey.value) payload.api_key = llmApiKey.value;
+  return payload;
+}
+
+async function handleSaveLlm() {
+  llmSaving.value = true;
+  g4fSaveError.value = "";
+  try {
+    const settings = await clipperStore.updateLlmSettings(llmPayload());
+    if (settings) {
+      llmMaskedKey.value = settings.api_key;
+      llmApiKey.value = "";
+      llmProvider.value = settings.provider;
+      llmBaseUrl.value = settings.base_url || "";
+      llmModel.value = settings.model || "";
+      llmOutline.value = settings.outline_enabled !== false;
+      g4fUseCookies.value = (settings as any).g4f_use_cookies !== false;
+      if ((settings as any).g4f_provider) g4fProviderSel.value = (settings as any).g4f_provider;
+      g4fModelSel.value = (settings as any).g4f_model || "";
+    }
+  } catch (e: any) {
+    g4fSaveError.value = e?.data?.message || e?.message || "Could not save — is the backend running?";
+    console.error("Failed to save AI provider:", e);
+  } finally {
+    llmSaving.value = false;
+  }
+}
+
+async function handleTestLlm() {
+  llmTesting.value = true;
+  llmTestResult.value = null;
+  llmTestAbort.value?.abort();
+  const controller = new AbortController();
+  llmTestAbort.value = controller;
+  try {
+    const r = await clipperStore.testLlmConnection(llmPayload(), controller.signal);
+    llmTestResult.value = { ok: r.ok, detail: r.detail };
+  } catch (e: any) {
+    if (controller.signal.aborted) {
+      llmTestResult.value = { ok: false, detail: "Test cancelled. The backend request may still finish in the background." };
+    } else {
+      const msg = e?.data?.data?.detail || e?.message || "Connection failed";
+      llmTestResult.value = {
+        ok: false,
+        detail: /timeout|aborted/i.test(String(msg)) || e?.name === "TimeoutError"
+          ? `${msg} — the provider hung. Try a different g4f provider/model, or turn OFF 'Use browser cookies'.`
+          : msg,
+      };
+    }
+  } finally {
+    if (llmTestAbort.value === controller) llmTestAbort.value = null;
+    llmTesting.value = false;
+  }
+}
+
+function cancelTestLlm() {
+  llmTestAbort.value?.abort();
+}
 try {
   const llmData = await clipperStore.fetchLlmSettings();
   if (llmData) {
     g4fUseCookies.value = llmData.settings.g4f_use_cookies !== false;
+    llmProvider.value = llmData.settings.provider || "gemini";
+    llmProvidersList.value = llmData.providers?.length ? llmData.providers : llmProvidersList.value;
+    llmBaseUrl.value = llmData.settings.base_url || "";
+    llmModel.value = llmData.settings.model || "";
+    llmOutline.value = llmData.settings.outline_enabled !== false;
+    llmMaskedKey.value = llmData.settings.api_key || "";
+    g4fProviderSel.value = llmData.settings.g4f_provider || "DeepAI";
+    g4fModelSel.value = llmData.settings.g4f_model || "gemini-2.5-flash-lite";
+    clipperStore.fetchG4fProviders().then(list => { if (list) g4fProvidersList.value = list; });
     if (g4fUseCookies.value) checkCookies();
   }
 } catch (e) {
@@ -359,6 +563,18 @@ async function saveTtsSettings() {
     settings.tts_quality = selectedQuality.value;
     settings.tts_speed = selectedSpeed.value;
   }
+  if (ttsEngine.value === "qwen3") {
+    // tts_voice mirrors the Qwen speaker so /generate voice select stays compatible
+    settings.tts_voice = qwenSpeaker.value;
+    settings.qwen_mode = qwenMode.value;
+    settings.qwen_speaker = qwenSpeaker.value;
+    settings.qwen_lang = qwenLang.value;
+    settings.qwen_instruct = qwenInstruct.value;
+    settings.qwen_design_prompt = qwenDesignPrompt.value;
+    settings.qwen_clone_ref = qwenCloneRef.value;
+    settings.qwen_clone_text = qwenCloneText.value;
+    settings.qwen_model = qwenModel.value;
+  }
   try {
     await $fetch(`${API_URL}/api/settings`, {
       method: "POST",
@@ -366,6 +582,165 @@ async function saveTtsSettings() {
     });
   } catch (error) {
     console.error("Failed to save TTS settings:", error);
+  }
+}
+
+function applyQwenCharacter(ch: QwenCharacter) {
+  qwenMode.value = ch.mode || "custom";
+  qwenLang.value = ch.language || qwenLang.value;
+  qwenDesignPrompt.value = ch.design_prompt || "";
+  qwenInstruct.value = ch.instruct || "";
+  qwenSpeaker.value = ch.value;
+  saveTtsSettings();
+}
+
+function customVoiceDescription(c: CustomVoice): string {
+  if (c.origin === "design") return `My designed voice · ${c.language} · "${c.design_prompt.slice(0, 80)}…"`;
+  return `My cloned voice · ${c.language} · ref: ${(c.refAudioPath || "").split("/").pop()}`;
+}
+
+function mergeCustomVoicesIntoOptions(target?: string) {
+  voiceOptions.value = voiceOptions.value.filter((o) => !customVoices.value.some((c) => c.name === o.value));
+  if (target && target !== "qwen3") return;
+  if (!target && ttsEngine.value !== "qwen3") return;
+  for (const c of customVoices.value) {
+    voiceOptions.value.push({
+      label: `★ ${c.name} (my ${c.origin === "design" ? "design" : "clone"})`,
+      value: c.name,
+      description: customVoiceDescription(c),
+    });
+  }
+}
+
+/** Fill the form from a saved (IndexedDB) voice. */
+function applyCustomVoice(c: CustomVoice) {
+  qwenMode.value = c.origin === "design" ? "design" : "clone";
+  qwenLang.value = c.language || qwenLang.value;
+  qwenDesignPrompt.value = c.origin === "design" ? c.design_prompt : "";
+  qwenInstruct.value = "";
+  if (c.origin === "clone") {
+    qwenCloneRef.value = c.refAudioPath;
+    qwenCloneText.value = c.ref_text;
+  }
+  qwenSpeaker.value = c.name;
+  saveTtsSettings();
+}
+
+function onQwenSpeakerChange(v: string) {
+  const custom = customVoices.value.find((c) => c.name === v);
+  if (custom) applyCustomVoice(custom);
+  else saveTtsSettings();
+}
+
+async function reloadCustomVoices() {
+  customVoices.value = await listCustomVoices();
+  mergeCustomVoicesIntoOptions();
+}
+
+async function saveCurrentAsCustom() {
+  customSaveLoading.value = true;
+  customSaveMsg.value = "";
+  customSaveOk.value = false;
+  const origin = qwenMode.value === "design" ? "design" : "clone";
+  const res = await saveCustomVoice({
+    name: customVoiceName.value.trim(),
+    origin,
+    language: qwenLang.value,
+    design_prompt: origin === "design" ? qwenDesignPrompt.value.trim() : "",
+    ref_text: origin === "clone" ? qwenCloneText.value : "",
+    refAudioPath: origin === "clone" ? qwenCloneRef.value : "",
+  });
+  if (res.ok) {
+    const savedName = customVoiceName.value.trim();
+    customSaveOk.value = true;
+    customSaveMsg.value = res.updated ? `Updated "${savedName}"` : `Saved "${savedName}"`;
+    customVoiceName.value = "";
+    await reloadCustomVoices();
+    onQwenSpeakerChange(savedName);
+  } else {
+    customSaveMsg.value = res.error || "Could not save voice";
+  }
+  customSaveLoading.value = false;
+}
+
+async function deleteCustomVoice(name: string) {
+  if (!(await removeCustomVoice(name))) return;
+  await reloadCustomVoices();
+  if (qwenSpeaker.value === name) {
+    qwenSpeaker.value = "Ryan";
+    saveTtsSettings();
+  }
+}
+async function previewQwenVoice() {
+  previewLoading.value = true;
+  previewError.value = "";
+  previewUrl.value = "";
+  // A saved custom voice is the source of truth: send its stored config so
+  // the audition matches generation exactly.
+  const custom = customVoices.value.find((c) => c.name === qwenSpeaker.value) || null;
+  const params = custom
+    ? toQwenParams(custom)
+    : {
+        qwen_mode: qwenMode.value,
+        qwen_lang: qwenLang.value,
+        qwen_instruct: qwenInstruct.value,
+        qwen_design_prompt: qwenDesignPrompt.value,
+        qwen_clone_ref: qwenCloneRef.value,
+        qwen_clone_text: qwenCloneText.value,
+      };
+  try {
+    await saveTtsSettings();
+    const res = await $fetch<{ status: string; data: { url: string }; message?: string }>(
+      `${API_URL}/api/tts/qwen/preview`,
+      {
+        method: "POST",
+        body: {
+          text: previewText.value,
+          mode: params.qwen_mode,
+          speaker: qwenSpeaker.value,
+          language: params.qwen_lang,
+          instruct: params.qwen_instruct,
+          design_prompt: params.qwen_design_prompt,
+          ref_audio: params.qwen_clone_ref,
+          ref_text: params.qwen_clone_text,
+        },
+      }
+    );
+    if (res.status === "success") {
+      previewUrl.value = `${API_URL}${res.data.url}`;
+    } else {
+      previewError.value = res.message || "Preview failed";
+    }
+  } catch (e: any) {
+    previewError.value = e?.data?.message || e?.message || "Preview failed — is the backend running?";
+  } finally {
+    previewLoading.value = false;
+  }
+}
+
+async function uploadQwenCloneRef(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (!input.files || input.files.length === 0) return;
+  qwenCloning.value = true;
+  qwenCloneError.value = "";
+  try {
+    const formData = new FormData();
+    formData.append("file", input.files[0]);
+    const res = await $fetch<{ status: string; data: { path: string }; message?: string }>(
+      `${API_URL}/api/tts/qwen/clone-reference`,
+      { method: "POST", body: formData }
+    );
+    if (res.status === "success") {
+      qwenCloneRef.value = res.data.path;
+      await saveTtsSettings();
+    } else {
+      qwenCloneError.value = res.message || "Upload failed";
+    }
+  } catch (e: any) {
+    qwenCloneError.value = e?.data?.message || e?.message || "Upload failed";
+  } finally {
+    qwenCloning.value = false;
+    input.value = "";
   }
 }
 
@@ -429,7 +804,7 @@ const HandleSaveSettings = async () => {};
   <div class="space-y-6">
     <div>
       <h1 class="text-[30px] font-bold leading-tight text-clipper-ink dark:text-white tracking-tight">Global Settings</h1>
-      <p class="text-sm text-clipper-ink/60 dark:text-white/60 mt-1">Configure TTS, fonts, subtitles and integrations</p>
+        <p class="text-sm text-clipper-ink/60 dark:text-white/60 mt-1">Configure AI provider, TTS, fonts, subtitles and integrations</p>
     </div>
 
     <div v-if="settingsLoadError" class="max-w-screen-md w-full bg-white dark:bg-neutral-800 border border-clipper-ink/12 dark:border-white/10 rounded-lg p-4">
@@ -451,31 +826,112 @@ const HandleSaveSettings = async () => {};
         <n-select v-model:value="globalSettings.aiModel" :options="aiModelOptions" class="w-full md:w-auto" />
       </n-form-item>
 
-      <div v-if="globalSettings.aiModel === 'g4f'" class="max-w-screen-md w-full bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-4 rounded-xl mb-4">
-        <n-checkbox
-          :checked="g4fUseCookies"
-          :disabled="g4fSaving"
-          @update:checked="onG4fCookiesChange"
-        >
-          <span class="text-sm font-medium text-clipper-ink dark:text-white">Use browser cookies</span>
-        </n-checkbox>
-        <p class="text-xs text-clipper-ink/60 dark:text-white/60 mt-1 ml-6">
-          g4f reads your Firefox Google cookies for Gemini. Turn OFF to use cookie-free
-          providers instead — no login, no API key. {{ g4fSaving ? "Saving…" : "" }}
-        </p>
-        <div v-if="cookieChecking" class="text-xs text-clipper-ink/60 dark:text-white/60 mt-2 ml-6">Checking browser cookies…</div>
-        <div v-else-if="cookieStatus && !cookieStatus.ok" class="mt-2 ml-6 rounded-lg border border-red-500/40 bg-red-500/10 p-3">
-          <p class="text-xs font-semibold text-red-500">Browser cookies are outdated</p>
-          <p class="text-xs text-clipper-ink/70 dark:text-white/70 mt-1">{{ cookieStatus.detail }}</p>
-          <ol class="text-xs text-clipper-ink/70 dark:text-white/70 list-decimal ml-4 mt-2 space-y-1">
-            <li v-for="(step, i) in cookieStatus.renew_steps" :key="i">{{ step }}</li>
-          </ol>
-          <button class="mt-2 text-xs font-medium underline" @click="checkCookies()">Check again</button>
+      <n-divider>AI Model Provider</n-divider>
+
+      <div class="max-w-screen-md w-full bg-white dark:bg-neutral-800 border border-clipper-ink/08 dark:border-white/08 p-5 rounded-xl mb-4 space-y-3">
+        <p class="text-xs text-clipper-ink/60 dark:text-white/60">Global LLM used for script writing, ranking, hook titles and outline generation. Gemini (official API) is the default — paste a free key from makersuite.google.com/app/apikey.</p>
+        <n-form-item label="Provider:" path="llmProvider">
+          <n-select
+            v-model:value="llmProvider"
+            :options="llmProvidersList.map(p => ({ label: p === 'gemini' ? 'gemini (Default)' : p === 'g4f' ? 'g4f (Free, needs browser cookies)' : p, value: p }))"
+            class="w-full"
+          />
+        </n-form-item>
+
+        <div v-if="llmProvider === 'g4f'" class="rounded-lg border p-3 space-y-3"
+          :class="g4fUseCookies && cookieStatus && !cookieStatus.ok
+            ? 'border-red-500/40 bg-red-500/10'
+            : 'border-clipper-ink/12 dark:border-white/10 bg-clipper-ink/[0.03] dark:bg-white/[0.03]'">
+          <n-form-item label="g4f Provider:" path="g4fProvider">
+            <n-select
+              v-model:value="g4fProviderSel"
+              :options="g4fProvidersList.map(p => ({ label: p.needs_cookies ? `${p.id} (needs cookies)` : (p.label && p.label !== p.id ? `${p.id} — ${p.label}` : p.id), value: p.id }))"
+              class="w-full"
+              filterable
+              @update:value="onG4fProviderChange"
+            />
+          </n-form-item>
+          <n-form-item label="g4f Model:" path="g4fModel">
+            <n-select
+              v-model:value="g4fModelSel"
+              :options="g4fModels.map(m => ({ label: m, value: m }))"
+              class="w-full"
+              filterable
+              tag
+            />
+          </n-form-item>
+          <n-checkbox :checked="g4fUseCookies" :disabled="g4fSaving" @update:checked="onG4fCookiesChange">
+            <span class="text-sm font-medium text-clipper-ink dark:text-white">Use browser cookies</span>
+          </n-checkbox>
+          <p class="text-xs text-clipper-ink/60 dark:text-white/60 mt-1 ml-6">
+            g4f reads your Firefox Google cookies for Gemini. Turn OFF to use cookie-free
+            providers instead — no login, no API key. {{ g4fSaving ? "Saving…" : "" }}
+          </p>
+          <div v-if="g4fUseCookies">
+            <div v-if="cookieChecking" class="text-xs text-clipper-ink/60 dark:text-white/60 mt-2 ml-6">Checking browser cookies…</div>
+            <div v-else-if="cookieStatus && !cookieStatus.ok" class="mt-2 ml-6">
+              <p class="text-xs font-semibold text-red-500">Browser cookies are outdated</p>
+              <p class="text-xs text-clipper-ink/70 dark:text-white/70 mt-1">{{ cookieStatus.detail }}</p>
+              <ol class="text-xs text-clipper-ink/70 dark:text-white/70 list-decimal ml-4 mt-2 space-y-1">
+                <li v-for="(step, i) in cookieStatus.renew_steps" :key="i">{{ step }}</li>
+              </ol>
+            </div>
+            <p v-else-if="cookieStatus && cookieStatus.ok" class="text-xs text-green-600 dark:text-green-400 mt-2 ml-6">
+              Cookies look fresh — {{ cookieStatus.detail }}
+            </p>
+            <div class="ml-6 mt-2 flex gap-3">
+              <button class="text-xs font-medium underline" @click="checkCookies()">Check cookies</button>
+              <button class="text-xs font-semibold underline" @click="refreshCookies()">Nuke &amp; re-import cookies</button>
+            </div>
+          </div>
         </div>
-        <p v-else-if="cookieStatus && cookieStatus.ok" class="text-xs text-green-600 dark:text-green-400 mt-2 ml-6">
-          Cookies look fresh — {{ cookieStatus.detail }}
-        </p>
-        <p v-if="g4fSaveError" class="text-xs text-red-500 mt-1 ml-6">{{ g4fSaveError }}</p>
+
+        <n-form-item v-if="showLlmBaseUrl" label="Base URL:" path="llmBaseUrl">
+          <n-input v-model:value="llmBaseUrl" :placeholder="llmProvider === 'ollama' ? 'http://localhost:11434/v1' : 'https://api.openai.com/v1'" class="w-full" />
+        </n-form-item>
+
+        <n-form-item label="API Key:" path="llmApiKey">
+          <n-input v-model:value="llmApiKey" type="password" :placeholder="llmMaskedKey ? llmMaskedKey : 'Not set'" class="w-full" />
+        </n-form-item>
+        <p class="text-[11px] text-clipper-ink/40 dark:text-white/40 -mt-2">Leave empty to keep the existing key.</p>
+
+        <n-form-item label="Model:" path="llmModel">
+          <n-input v-model:value="llmModel" placeholder="e.g. gemini-3.5-flash, gemini-2.5-flash, gpt-4o-mini (empty = provider default)" class="w-full" />
+        </n-form-item>
+
+        <n-checkbox v-model:checked="llmOutline">
+          <span class="text-sm font-medium text-clipper-ink dark:text-white">Outline generation</span>
+          <span class="text-xs text-clipper-ink/40 dark:text-white/40">— generate topic timeline per transcript</span>
+        </n-checkbox>
+
+        <div v-if="llmTestResult" class="text-sm" :class="llmTestResult.ok ? 'text-clipper-green' : 'text-red-500'">
+          {{ llmTestResult.ok ? 'Connection OK' : 'Connection failed' }} — {{ llmTestResult.detail }}
+        </div>
+        <p v-if="g4fSaveError" class="text-xs text-red-500">{{ g4fSaveError }}</p>
+
+        <div class="flex gap-2 pt-1">
+          <button
+            class="h-10 px-4 rounded-lg border border-clipper-ink/12 dark:border-white/10 bg-white dark:bg-neutral-800 text-sm font-medium text-clipper-ink dark:text-white disabled:opacity-50"
+            :disabled="llmTesting"
+            @click="handleTestLlm"
+          >
+            {{ llmTesting ? 'Testing…' : 'Test connection' }}
+          </button>
+          <button
+            v-if="llmTesting"
+            class="h-10 px-4 rounded-lg border border-red-500/40 text-red-500 text-sm font-semibold hover:bg-red-500/10"
+            @click="cancelTestLlm"
+          >
+            Cancel
+          </button>
+          <button
+            class="h-10 px-4 rounded-lg bg-clipper-green text-clipper-ink font-semibold text-sm hover:opacity-90 disabled:opacity-50"
+            :disabled="llmSaving"
+            @click="handleSaveLlm"
+          >
+            {{ llmSaving ? 'Saving…' : 'Save' }}
+          </button>
+        </div>
       </div>
 
       <n-divider>TTS Settings</n-divider>
@@ -486,6 +942,9 @@ const HandleSaveSettings = async () => {};
             <n-select v-model:value="ttsEngine" :options="ttsEngineOptions" class="flex-1" @update:value="onTtsEngineChange" />
             <n-tag :type="ttsStatus.supertonic === 'healthy' ? 'success' : 'warning'" size="small">
               {{ ttsStatus.supertonic === 'healthy' ? "Supertonic OK" : "Supertonic Down" }}
+            </n-tag>
+            <n-tag :type="ttsStatus.qwen3 === 'healthy' || ttsStatus.qwen3 === 'available' ? 'success' : 'warning'" size="small">
+              {{ ttsStatus.qwen3 === 'healthy' ? "Qwen3 OK" : ttsStatus.qwen3 === 'available' ? "Qwen3 Ready" : "Qwen3 Down" }}
             </n-tag>
           </div>
         </n-form-item>
@@ -554,7 +1013,7 @@ const HandleSaveSettings = async () => {};
           </n-form-item>
         </template>
 
-        <template v-else>
+        <template v-else-if="ttsEngine === 'tiktok'">
           <n-form-item label="Voice:" path="voice">
             <n-select
               v-model:value="globalSettings.voice"
@@ -563,6 +1022,192 @@ const HandleSaveSettings = async () => {};
               class="w-full md:w-auto"
             />
           </n-form-item>
+        </template>
+
+        <template v-else-if="ttsEngine === 'qwen3'">
+          <div v-if="qwenCharacters.length" class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="text-xs font-semibold text-gray-500">Characters:</span>
+            <n-button
+              v-for="c in qwenCharacters" :key="c.value" size="small" ghost
+              :type="qwenSpeaker === c.value ? 'primary' : 'default'"
+              @click="applyQwenCharacter(c)"
+            >
+              🐶 {{ c.label }}
+            </n-button>
+          </div>
+          <p v-if="qwenSpeaker && qwenCharacters.find(c => c.value === qwenSpeaker)" class="text-xs text-gray-500 dark:text-gray-400 -mt-2 mb-3 px-1">
+            {{ qwenCharacters.find(c => c.value === qwenSpeaker)?.description }}
+          </p>
+          <div class="border border-dashed border-gray-300 dark:border-white/15 rounded-lg p-3 space-y-2 mb-3">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-semibold text-gray-500">My voices:</span>
+              <n-input
+                v-model:value="customVoiceName" placeholder="Name this voice…" maxlength="40"
+                size="small" class="!w-40"
+              />
+              <n-button
+                size="small" type="primary" ghost
+                :loading="customSaveLoading"
+                :disabled="qwenMode === 'clone' ? !qwenCloneRef : (qwenMode === 'design' ? !qwenDesignPrompt.trim() : true)"
+                @click="saveCurrentAsCustom"
+              >
+                {{ qwenMode === 'design' ? 'Save design' : 'Save voice' }}
+              </n-button>
+            </div>
+            <p class="text-[11px] text-gray-400 px-1">
+              {{ qwenMode === 'design'
+                ? 'Saves the description as a reusable voice (first save builds it, may take a few minutes). Same name overwrites = update.'
+                : qwenMode === 'clone'
+                  ? 'Saves the uploaded clip + transcript as a reusable voice. Same name overwrites = update.'
+                  : 'Switch to Voice Design or Voice Clone mode to save the current setup as a reusable voice.' }}
+            </p>
+            <p
+              v-if="customSaveMsg" class="text-xs px-1"
+              :class="customSaveOk ? 'text-green-600 dark:text-green-400' : 'text-red-500'"
+            >
+              {{ customSaveMsg }}
+            </p>
+            <div v-if="customVoices.length" class="flex flex-wrap items-center gap-2">
+              <template v-for="c in customVoices" :key="c.name">
+                <n-button
+                  size="small" ghost
+                  :type="qwenSpeaker === c.name ? 'primary' : 'default'"
+                  @click="onQwenSpeakerChange(c.name)"
+                >
+                  ★ {{ c.name }}
+                </n-button>
+                <n-button
+                  size="tiny" quaternary title="Delete saved voice"
+                  @click="deleteCustomVoice(c.name)"
+                >
+                  <template #icon><Icon name="mdi:delete" /></template>
+                </n-button>
+              </template>
+            </div>
+          </div>
+          <n-form-item label="Mode:" path="qwenMode">
+            <n-radio-group v-model:value="qwenMode" name="qwenMode" size="medium" class="flex flex-wrap gap-2" @update:value="saveTtsSettings">
+              <n-radio-button v-for="m in qwenModes.length ? qwenModes : [{ value: 'custom', label: 'Preset Voice + Instruct' }, { value: 'design', label: 'Voice Design' }, { value: 'clone', label: 'Voice Clone' }]" :key="m.value" :value="m.value">
+                <span>{{ m.label }}</span>
+              </n-radio-button>
+            </n-radio-group>
+          </n-form-item>
+          <p class="text-xs text-gray-500 dark:text-gray-400 -mt-2 mb-3 px-1">
+            {{ (qwenModes.find(m => m.value === qwenMode) || {}).description || "" }}
+          </p>
+
+          <template v-if="qwenMode === 'custom'">
+            <n-form-item label="Preset Voice:" path="qwenSpeaker">
+              <n-select
+                v-model:value="qwenSpeaker"
+                :options="voiceOptions"
+                :loading="voicesLoading"
+                class="w-full"
+                @update:value="onQwenSpeakerChange"
+              />
+            </n-form-item>
+            <div v-if="qwenSpeaker && voiceStyles[qwenSpeaker]" class="text-xs text-gray-500 dark:text-gray-400 -mt-3 mb-3 px-1">
+              {{ voiceStyles[qwenSpeaker]?.description }}
+            </div>
+          </template>
+
+          <template v-if="qwenMode === 'design'">
+            <n-form-item label="Voice Description:" path="qwenDesignPrompt">
+              <n-input
+                v-model:value="qwenDesignPrompt"
+                type="textarea"
+                :rows="3"
+                placeholder="Describe the voice, e.g. A dynamic young male narrator with strong rhythmic drive, energetic Shorts-style delivery."
+                class="w-full"
+                @update:value="saveTtsSettings"
+              />
+            </n-form-item>
+            <div v-if="qwenDesignPresets.length" class="flex flex-wrap gap-2 -mt-2 mb-3">
+              <n-button
+                v-for="p in qwenDesignPresets" :key="p.label" size="tiny" ghost
+                @click="qwenDesignPrompt = p.value; saveTtsSettings()"
+              >
+                {{ p.label }}
+              </n-button>
+            </div>
+          </template>
+
+          <template v-if="qwenMode === 'clone'">
+            <p class="text-[11px] text-gray-400 px-1 mb-1">
+              Clone copies your reference clip — emotion and pace come from the clip itself, not from steering text.
+            </p>
+            <n-form-item label="Reference Clip (~3s+ clear speech):" path="qwenCloneRef">
+              <div class="flex items-center gap-2 w-full">
+                <n-button size="small" :loading="qwenCloning" @click="qwenRefInput?.click()">
+                  {{ qwenCloneRef ? "Replace clip" : "Upload clip" }}
+                </n-button>
+                <input ref="qwenRefInput" type="file" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,.wma" class="hidden" @change="uploadQwenCloneRef" />
+                <span class="text-xs text-gray-500 truncate">{{ qwenCloneRef ? qwenCloneRef.split('/').pop() : "No clip uploaded" }}</span>
+              </div>
+            </n-form-item>
+            <p v-if="qwenCloneError" class="text-xs text-red-500 -mt-2 mb-2">{{ qwenCloneError }}</p>
+            <n-form-item label="Reference Transcript:" path="qwenCloneText">
+              <n-input
+                v-model:value="qwenCloneText"
+                type="textarea"
+                :rows="2"
+                placeholder="Exact words spoken in the reference clip (empty = timbre-only clone)"
+                class="w-full"
+                @update:value="saveTtsSettings"
+              />
+            </n-form-item>
+          </template>
+
+          <n-form-item label="Language:" path="qwenLang">
+            <n-select
+              v-model:value="qwenLang"
+              :options="languageOptions.map(l => ({ label: l.label, value: l.code }))"
+              class="w-full"
+              @update:value="saveTtsSettings"
+            />
+          </n-form-item>
+
+          <n-form-item v-if="qwenMode === 'custom'" label="Steer the voice (instruct):" path="qwenInstruct">
+            <n-input
+              v-model:value="qwenInstruct"
+              type="textarea"
+              :rows="2"
+              placeholder="e.g. Speak cheerfully and energetically, fast-paced like a viral Shorts narrator. Empty = neutral."
+              class="w-full"
+              @update:value="saveTtsSettings"
+            />
+          </n-form-item>
+          <div v-if="qwenMode === 'custom' && qwenInstructPresets.length" class="flex flex-wrap gap-2 -mt-2 mb-3">
+            <n-button
+              v-for="p in qwenInstructPresets" :key="p.label" size="tiny" ghost
+              @click="qwenInstruct = p.value; saveTtsSettings()"
+            >
+              {{ p.label }}
+            </n-button>
+          </div>
+
+          <n-form-item label="Model:" path="qwenModel">
+            <n-select
+              v-model:value="qwenModel"
+              :options="[{ label: 'Auto (per-mode default, 1.7B)', value: '' }, ...Object.entries(qwenModels).map(([k, v]) => ({ label: `${k} — ${v}`, value: v }))]"
+              placeholder="Auto (per-mode default, 1.7B)"
+              class="w-full"
+              @update:value="saveTtsSettings"
+            />
+          </n-form-item>
+
+          <n-divider class="my-3">Audition</n-divider>
+          <n-form-item label="Preview text:" path="qwenPreview">
+            <n-input v-model:value="previewText" type="textarea" :rows="2" class="w-full" />
+          </n-form-item>
+          <div class="flex items-center gap-2 mb-2">
+            <n-button size="small" type="primary" ghost :loading="previewLoading" @click="previewQwenVoice">
+              Generate preview
+            </n-button>
+            <span class="text-[11px] text-gray-400">First run downloads the model (~3GB), then it's instant.</span>
+          </div>
+          <p v-if="previewError" class="text-xs text-red-500 mb-2">{{ previewError }}</p>
+          <audio v-if="previewUrl" :src="previewUrl" controls class="w-full h-8 mb-2"></audio>
         </template>
       </div>
 

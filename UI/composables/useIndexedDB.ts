@@ -1,5 +1,5 @@
 const DB_NAME = 'SocialLeadGenDB'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 let dbInstance: IDBDatabase | null = null
 
@@ -29,6 +29,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('scraped_sites')) {
         db.createObjectStore('scraped_sites', { keyPath: 'url' })
+      }
+      if (!db.objectStoreNames.contains('custom_voices')) {
+        db.createObjectStore('custom_voices', { keyPath: 'name' })
       }
     }
     req.onsuccess = (e) => {
@@ -144,6 +147,42 @@ export const useIndexedDB = () => {
     })
   }
 
+  const saveCustomVoice = async (voice: any) => {
+    const store = await getStore('custom_voices', 'readwrite')
+    return new Promise<void>((resolve, reject) => {
+      const req = store.put({ ...voice, updatedAt: Date.now() })
+      req.onsuccess = () => resolve()
+      req.onerror = () => reject(req.error)
+    })
+  }
+
+  const getCustomVoice = async (name: string): Promise<any | null> => {
+    const store = await getStore('custom_voices')
+    return new Promise((resolve, reject) => {
+      const req = store.get(name)
+      req.onsuccess = () => resolve(req.result || null)
+      req.onerror = () => reject(req.error)
+    })
+  }
+
+  const getAllCustomVoices = async (): Promise<any[]> => {
+    const store = await getStore('custom_voices')
+    return new Promise((resolve, reject) => {
+      const req = store.getAll()
+      req.onsuccess = () => resolve(req.result || [])
+      req.onerror = () => reject(req.error)
+    })
+  }
+
+  const deleteCustomVoice = async (name: string) => {
+    const store = await getStore('custom_voices', 'readwrite')
+    return new Promise<void>((resolve, reject) => {
+      const req = store.delete(name)
+      req.onsuccess = () => resolve()
+      req.onerror = () => reject(req.error)
+    })
+  }
+
   return {
     saveProfile,
     getProfile,
@@ -158,5 +197,9 @@ export const useIndexedDB = () => {
     getAllCampaigns,
     saveScrapedSite,
     getScrapedSite,
+    saveCustomVoice,
+    getCustomVoice,
+    getAllCustomVoices,
+    deleteCustomVoice,
   }
 }

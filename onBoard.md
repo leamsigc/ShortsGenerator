@@ -32,6 +32,17 @@ conda env remove -n shortsgenerator           # delete and recreate if broken
 conda run -n shortsgenerator python Backend/main.py   # run without activating
 ```
 
+> `pip install -r requirements.txt` resolves versions from scratch and pip's
+> backtracker can stall on it (`resolution-too-deep`). Prefer the pre-resolved
+> lockfile instead — same packages, instant resolution:
+> ```bash
+> conda activate shortsgenerator
+> pip install -r requirements.lock
+> ```
+> After changing pins in `requirements.txt`, regenerate the lock:
+> `uv pip compile requirements.txt --python $(which python) -o requirements.lock`
+> (torch/CUDA wheels for Qwen3-TTS make the full sync several GB).
+
 Verify the env is healthy:
 
 ```bash
@@ -78,6 +89,7 @@ cd UI && npm install && npm run dev     # Nuxt on :3000
 | `Backend/classes/Shorts.py` | Core pipeline orchestrator |
 | `Backend/tiktokvoice.py` | TikTok TTS |
 | `Backend/supertonic_tts.py` | Local ML TTS |
+| `Backend/qwen3_tts.py` | Qwen3 TTS (preset timbres + Voice Design + Voice Clone) |
 | `Backend/youtube.py` | YouTube OAuth2 upload |
 | `requirements.txt` | Python deps |
 | `.env.example` | All env vars documented |
@@ -115,7 +127,7 @@ cd UI && npm install && npm run dev     # Nuxt on :3000
 - **Env required:** `PEXELS_API_KEY`, `TIKTOK_SESSION_ID`, `IMAGEMAGICK_BINARY`
 - **Env optional:** `GOOGLE_API_KEY` (Gemini), `ASSEMBLY_AI_API_KEY` (cloud subtitles), `MAGICSYNC_BASE_URL`, `MAGICSYNC_API_TOKEN`
 - **Aspect ratios:** 9:16 (default), 16:9, 1:1, 4:5, 21:9
-- **TTS engines:** Supertonic (local, 10 voices, 33 langs), TikTok (44 voices, fallback), KittenTTS (8 voices)
+- **TTS engines:** Supertonic (local, 10 voices, 33 langs), TikTok (44 voices, fallback), KittenTTS (8 voices), Qwen3-TTS (local, 9 preset timbres + characters EL-PERRO/EL-GANCHO/LA-FIERA/SOMBRA + My Voices saved in browser IndexedDB + Voice Design + Voice Clone, 10 langs + Auto, hook/retention steering)
 - **Subtitle templates:** 10 presets (classic, modern_glow, bold_outline, minimal, cinematic, neon, social_viral, floating, news_ticker, karaoke_highlight)
 - **Static dirs:** `Backend/static/generated_videos/` (output), `Backend/static/assets/temp/` (working), `Backend/static/assets/music/` (library), `Backend/static/assets/subtitles/`
 - **Cancellation:** Global `GENERATING` flag, checked mid-pipeline

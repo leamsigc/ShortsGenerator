@@ -38,6 +38,21 @@ interface MagicSyncBusiness {
 
 const { globalSettings } = useGlobalSettings();
 const { video, defaults: videoDefaults } = useVideoSettings();
+const { get: getCustomVoiceByName, toQwenParams } = useCustomVoices();
+
+/**
+ * If the selected voice is a saved custom voice (IndexedDB "My voices"),
+ * attach its full stored config so the backend needs no prior global state
+ * (works even after a backend restart wiped in-memory TTS settings).
+ */
+const customVoiceParams = async () => {
+  try {
+    const custom = await getCustomVoiceByName(video.value.voice);
+    return custom ? toQwenParams(custom) : {};
+  } catch {
+    return {};
+  }
+};
 
 // Load subtitle templates from API
 let settingsData: any = null;
@@ -145,15 +160,19 @@ const scriptLengthOptions = [
 ];
 
 const currentState = ref<"script" | "loading" | "Error">("script");
+const scriptError = ref<string | null>(null);
 
 const HandleGenerateScript = async () => {
   try {
     currentState.value = "loading";
+    scriptError.value = null;
     showModal.value = false;
     const { data } = await $fetch<{
       data: { script: string; search: string[] };
     }>(`${API_URL}/api/script`, {
       method: "POST",
+      // 5 min: script = 2 LLM calls; abort instead of spinning forever.
+      timeout: 300000,
       body: {
         videoSubject: video.value.videoSubject,
         aiModel: globalSettings.value.aiModel,
@@ -168,9 +187,13 @@ const HandleGenerateScript = async () => {
 
     video.value.search = data.search.join(",");
     currentState.value = "script";
-  } catch (error) {
+  } catch (error: any) {
     console.log({ error });
     currentState.value = "Error";
+    scriptError.value =
+      error?.name === "TimeoutError" || /timeout|aborted/i.test(error?.message || "")
+        ? "Script generation timed out after 5 minutes. The AI provider is likely stalled — check Settings → AI Model Provider (cookies status) or try again."
+        : (error?.data?.message || error?.message || "Script generation failed. Try again.");
   }
 };
 // State management — now duration-based so steps auto-progress while backend works
@@ -264,10 +287,62 @@ const HandleGenerateVideo = async () => {
         imageDurations: (video.value.images || []).map((img: any) => img.duration),
         imageDuration: video.value.imageDuration || 5,
         clipDuration: video.value.clipDuration || 10,
+        ...(await customVoiceParams()),
       },
     });
     video.value.finalVideoUrl = data.finalVideo;
     video.value.lastMetadata = data.metadata;
+    currentState.value = "script";
+
+  } catch (error) {
+    console.log({ error });
+    currentState.value = "Error";
+  } finally {
+    uiState.isAfterTextLoading = false;
+  }
+};
+
+// Re-render audio + video only — no AI calls (no script/search/metadata regeneration).
+// Reuses the current script, selected videos and settings, and re-attaches lastMetadata.
+const HandleRegenerateVideoOnly = async () => {
+  try {
+    uiState.isAfterTextLoading = true;
+    currentState.value = "loading";
+    showModal.value = false;
+    const { data } = await $fetch<{
+      data: {
+        finalAudio: string;
+        subtitles: string;
+        finalVideo: string;
+      };
+    }>(`${API_URL}/api/regenerate-video`, {
+      method: "POST",
+      body: {
+        script: video.value.script,
+        voice: video.value.voice || globalSettings.value.voice,
+        search: video.value.search.split(","),
+        aiModel: video.value.aiModel || globalSettings.value.aiModel,
+        selectedVideoUrls: video.value.selectedVideoUrls,
+        subtitlesPosition: video.value.subtitlePosition
+          ? `center,${video.value.subtitlePosition}`
+          : "",
+        subtitleTemplate: video.value.subtitleTemplate || "classic",
+        aspectRatio: video.value.aspectRatio || "9:16",
+        customSubtitle: video.value.customSubtitle || "",
+        scriptTemplate: video.value.scriptTemplate || "",
+        customAudioPath: video.value.useCustomAudio ? video.value.customAudioPath : "",
+        audioStartTime: video.value.audioStartTime || 0,
+        audioEndTime: video.value.audioEndTime || 0,
+        images: (video.value.images || []).map((img: any) => img.path),
+        imageDurations: (video.value.images || []).map((img: any) => img.duration),
+        imageDuration: video.value.imageDuration || 5,
+        clipDuration: video.value.clipDuration || 10,
+        metadata: video.value.lastMetadata || {},
+        ...(await customVoiceParams()),
+      },
+    });
+    video.value.finalVideoUrl = data.finalVideo;
+    // Keep existing metadata — backend reused it, nothing AI-generated to update.
     currentState.value = "script";
 
   } catch (error) {
@@ -847,6 +922,10 @@ function handleStateChange(state: number) {
                 Regenerate Script
               </n-button>
             </div>
+            <div v-if="scriptError" class="mb-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 flex items-start justify-between gap-3">
+              <p class="text-xs text-red-600 dark:text-red-400">{{ scriptError }}</p>
+              <button class="text-xs font-semibold underline shrink-0" @click="HandleGenerateScript">Retry</button>
+            </div>
             <n-form-item :show-label="false" path="script">
               <n-input v-model:value="video.script" :placeholder="$t('video.generate.step.two.script.placeholder')"
                 type="textarea" show-count clearable :autosize="{
@@ -1208,25 +1287,32 @@ function handleStateChange(state: number) {
         </section>
         <section class="col-span-2">
           <header class="col-span-5 flex justify-end gap-4 mb-5" v-if="video.finalVideoUrl">
-            <n-button type="tertiary" dashed size="large" @click="HandleGenerateVideo">Regenerate</n-button>
-            <n-button type="tertiary" dashed size="large" @click="HandleClear">Clear</n-button>
+            <n-button type="tertiary" dashed size="tiny" @click="HandleGenerateVideo">Regenerate</n-button>
+            <n-button
+              type="info"
+              dashed
+              size="tiny"
+              @click="HandleRegenerateVideoOnly"
+              title="Re-render audio + video only. Skips AI calls (no script, search or metadata regeneration)."
+            >Regenerate Video Only</n-button>
+            <n-button type="tertiary" dashed size="tiny" @click="HandleClear">Clear</n-button>
 
             <n-button
               type="success"
               dashed
-              size="large"
+              size="tiny"
               @click="HandleAddAudio"
               :disabled="!(video.musicSource === 'video' ? video.backgroundMusicFromVideo : video.selectedAudio)"
             >
               Add Music
             </n-button>
-            <n-button type="primary" dashed size="large" @click="openScheduleModal">
+            <n-button type="primary" dashed size="tiny" @click="openScheduleModal">
               <template #icon>
                 <Icon name="mdi:calendar-clock" />
               </template>
               Schedule
             </n-button>
-            <n-button type="default" dashed size="large" @click="HandleClearAndGoToVideos">
+            <n-button type="default" dashed size="tiny" @click="HandleClearAndGoToVideos">
               Videos
             </n-button>
           </header>

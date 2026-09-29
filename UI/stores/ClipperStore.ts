@@ -48,6 +48,17 @@ export interface LlmSettings {
   model: string
   outline_enabled: boolean
   g4f_use_cookies: boolean
+  g4f_provider: string
+  g4f_model: string
+}
+
+export interface G4fProviderInfo {
+  id: string
+  label: string
+  url: string
+  default_model: string
+  models: string[]
+  needs_cookies: boolean
 }
 
 export interface PublishRecord {
@@ -412,11 +423,11 @@ export const useClipperStore = defineStore("clipper", {
       }
     },
 
-    async testLlmConnection(settings?: Partial<LlmSettings>) {
+    async testLlmConnection(settings?: Partial<LlmSettings>, signal?: AbortSignal) {
       try {
         const res = await $fetch<{ status: string; data: { ok: boolean; detail: string; provider: string } }>(
           `${getApiUrl()}/api/clipper/llm/test`,
-          { method: "POST", body: settings ? { settings } : {} }
+          { method: "POST", body: settings ? { settings } : {}, signal }
         )
         return res.data
       } catch (e: any) {
@@ -435,6 +446,33 @@ export const useClipperStore = defineStore("clipper", {
         return null
       } catch (e) {
         console.error("Failed to check cookie status", e)
+        return null
+      }
+    },
+
+    async refreshG4fCookies() {
+      try {
+        const res = await $fetch<{ status: string; data: { cleared: string[]; cookies_found: number; status: { ok: boolean; reason: string; detail: string; renew_steps: string[] } } }>(
+          `${getApiUrl()}/api/clipper/llm/cookies/refresh`,
+          { method: "POST" }
+        )
+        if (res.status === "success") return res.data
+        return null
+      } catch (e) {
+        console.error("Failed to refresh cookies", e)
+        return null
+      }
+    },
+
+    async fetchG4fProviders() {
+      try {
+        const res = await $fetch<{ status: string; data: { providers: G4fProviderInfo[] } }>(
+          `${getApiUrl()}/api/clipper/llm/g4f-providers`
+        )
+        if (res.status === "success") return res.data.providers
+        return null
+      } catch (e) {
+        console.error("Failed to fetch g4f providers", e)
         return null
       }
     },

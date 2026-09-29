@@ -8,7 +8,7 @@ Automate YouTube Shorts creation locally — script generation, stock video sear
 
 - **AI Script Generation** — uses g4f (free) or Gemini to generate video scripts
 - **Stock Video Search** — auto-downloads matching clips from Pexels
-- **Multi-Voice TTS** — Supertonic (local, 10 voices, 33 languages), TikTok TTS (fallback), KittenTTS
+- **Multi-Voice TTS** — Supertonic (local, 10 voices, 33 languages), TikTok TTS (fallback), KittenTTS, Qwen3-TTS (local, 9 preset timbres + Voice Design + Voice Clone + character voices 🐶 EL-PERRO / EL-GANCHO / LA-FIERA / SOMBRA, hook/retention steering presets)
 - **Subtitle Templates** — 10 presets (classic, modern_glow, bold_outline, minimal, cinematic, neon, social_viral, floating, news_ticker, karaoke_highlight)
 - **Background Music** — auto-mix from your music library or extract from a video
 - **Image Stitching** — upload multiple images to stitch at the start of the video with configurable duration per image (default 5s)
@@ -60,7 +60,9 @@ Open **http://localhost:5000** or **http://localhost:3000** for the frontend.
 ### Backend (Python Flask on :8080)
 
 ```bash
-pip install -r requirements.txt
+conda activate shortsgenerator   # required: Python 3.11 env (see onBoard.md).
+                                 # main.py exits immediately on any other version.
+pip install -r requirements.lock # pre-resolved; plain requirements.txt can stall pip's resolver
 cp .env.example .env
 # Fill in PEXELS_API_KEY, IMAGEMAGICK_BINARY, etc.
 cd Backend
@@ -97,7 +99,7 @@ See [EnvironmentVariables.md](EnvironmentVariables.md) for the full list.
 1. **Generate a script** — enter a video subject, select a script template, click Generate
 2. **Review & edit** — modify the script, add search keywords, select subtitle template
 3. **Upload images (optional)** — upload images that will be stitched at the start of the video; set duration per image
-4. **Select voice** — choose TTS engine and voice style
+4. **Select voice** — choose TTS engine and voice style (Qwen3 clones/designs can be saved as named "My voices" in your browser and reused as presets)
 5. **Set aspect ratio** — 9:16 (default), 16:9, 1:1, or 4:5
 6. **Generate video** — downloads stock clips, generates TTS, combines everything with subtitles
 7. **Add music** — pick from your music library or extract audio from a video
@@ -122,6 +124,11 @@ In **Settings → MagicSync Integration**, add API keys for each business. Each 
 | POST | `/api/generate` | Full video generation pipeline |
 | POST | `/api/script` | Generate script only |
 | POST | `/api/search-and-download` | Search + download + TTS + combine |
+| POST | `/api/regenerate-video` | Re-render audio + video only (no AI calls, reuses metadata) |
+| GET | `/api/tts/status` | TTS engine health (supertonic/tiktok/qwen3) |
+| GET | `/api/tts/voices?engine=` | Voices + extras per engine (languages, modes, presets) |
+| POST | `/api/tts/qwen/preview` | Audition a Qwen3 voice/mode without full generation |
+| POST | `/api/tts/qwen/clone-reference` | Upload a reference clip for Qwen3 voice clone |
 | POST | `/api/cancel` | Cancel generation |
 | POST | `/api/addAudio` | Add background music to video |
 | POST | `/api/upload-music` | Upload music file |
@@ -149,6 +156,9 @@ Backend/
 ├── gpt.py               # AI script generation
 ├── search.py            # Pexels stock video search
 ├── tiktokvoice.py       # TikTok TTS
+├── supertonic_tts.py    # Supertonic local TTS
+├── qwen3_tts.py         # Qwen3 TTS (preset timbres + Voice Design + Voice Clone)
+├── requirements.lock    # Pre-resolved pins (use this for pip install; see Notes)
 ├── classes/
 │   └── Shorts.py        # Core pipeline orchestrator
 UI/
@@ -161,6 +171,29 @@ UI/
 │   └── useGlobalSettings.ts # App-wide settings
 └── stores/
 ```
+
+## Notes
+
+- **Python 3.11 only.** The backend exits on startup with any other version
+  (`conda activate shortsgenerator` first, in the same terminal). Running it
+  under `base` (3.10) fails with cryptic native-lib errors (e.g. torchaudio
+  `.so` load failures) — never install project packages into `base`.
+- **Install via the lockfile.** `pip install -r requirements.lock` instead of
+  `requirements.txt`: the graph (torch/CUDA + `qwen-tts` → pinned
+  `transformers==4.57.3` → `huggingface-hub<1.0`) makes pip's resolver stall
+  (`resolution-too-deep`). After changing pins, regenerate with:
+  `uv pip compile requirements.txt --python $(which python) -o requirements.lock`
+- **Qwen3-TTS is optional but local.** Select it in Settings → TTS Engine for
+  preset timbres, free-form Voice Design, or Voice Clone, plus a preview
+  audition button. Missing GPU deps degrade gracefully to "unavailable" with
+  Supertonic/TikTok fallback. First preview downloads ~3GB of weights once.
+- **g4f Gemini cookies.** The free g4f path reads Firefox/Chrome login cookies
+  via `browser-cookie3` (required package). If Settings reports "cookies
+  outdated" with 0 cookies found, check the package is installed and restart
+  the backend — re-logging in can't help until the reader exists. Snap-Firefox
+  profiles are supported. Escape hatches: toggle OFF "Use browser cookies"
+  (cookie-free providers) or set provider `gemini` with a free
+  `GOOGLE_API_KEY`.
 
 ## Contributing
 

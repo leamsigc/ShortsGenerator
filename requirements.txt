@@ -1,4 +1,8 @@
-g4f>=7.9.4
+g4f>=8.5.8
+# Required for the g4f Gemini path: g4f reads Firefox/Chrome login cookies
+# via browser-cookie3 (optional upstream dep). Without it every cookie read
+# silently returns {} and Settings shows "cookies outdated" forever.
+browser-cookie3
 setuptools==84.0.0
 wheel==0.48.0
 requests==2.34.2
@@ -27,8 +31,18 @@ yt-dlp==2026.8.19
 onnxruntime==1.23.2
 soundfile==0.14.0
 numpy==2.2.6
-huggingface_hub==1.30.0
+# NOTE: kept <1.0 on purpose. qwen-tts pins transformers==4.57.3 which needs
+# huggingface-hub>=0.34.0,<1.0. Nothing in this file needs hub 1.x
+# (supertonic>=0.10, faster-whisper>=0.21, tokenizers<2.0 all accept 0.x),
+# and ==1.30.0 made the graph unsatisfiable (pip spun forever on tenacity).
+huggingface-hub>=0.34.0,<1.0
 supertonic==1.3.1
+# Qwen3-TTS: local voice design / voice clone / steerable preset timbres
+# (https://github.com/QwenLM/Qwen3-TTS). Lazy-loads 0.6B/1.7B weights on
+# first use; needs a GPU for practical speeds, works on CPU otherwise.
+qwen-tts
+torch
+transformers
 safetensors==0.8.0
 opencv-python>=5.0.0.93
 faster-whisper>=1.2.1

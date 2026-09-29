@@ -33,6 +33,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "model": "",              # e.g. gemini-2.5-flash, gpt-4o-mini, qwen2.5:7b (empty = provider default)
     "outline_enabled": True,  # topic-timeline extraction on process
     "g4f_use_cookies": True,  # g4f Gemini path uses browser cookies; off = cookie-free g4f chain
+    "g4f_provider": "DeepAI",  # g4f provider class name (see /llm/g4f-providers)
+    "g4f_model": "gemini-2.5-flash-lite",  # model for the selected g4f provider
 }
 
 PROVIDERS = ["gemini", "g4f", "openai", "ollama", "qwen"]
@@ -81,6 +83,10 @@ def update_llm_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
         current["outline_enabled"] = bool(new_settings["outline_enabled"])
     if "g4f_use_cookies" in new_settings:
         current["g4f_use_cookies"] = bool(new_settings["g4f_use_cookies"])
+    if "g4f_provider" in new_settings and str(new_settings["g4f_provider"]).strip():
+        current["g4f_provider"] = str(new_settings["g4f_provider"]).strip()
+    if "g4f_model" in new_settings:
+        current["g4f_model"] = str(new_settings["g4f_model"]).strip()
     if current["provider"] not in PROVIDERS:
         current["provider"] = DEFAULT_SETTINGS["provider"]
     _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -171,17 +177,22 @@ def llm_complete(prompt: str) -> str:
 
 
 def test_llm_connection(settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Send a tiny prompt to validate provider config. Returns {ok, detail}."""
+    """Send a tiny prompt to validate provider config. Returns {ok, detail}.
+
+    Hard-capped at 240s in a worker thread so the HTTP request always
+    resolves — a hung provider reports failure instead of hanging forever.
+    """
+    from gpt import _call_with_timeout
     try:
         if settings:
             saved = get_llm_settings()
             update_llm_settings(settings)
             try:
-                reply = llm_complete("Reply with exactly: OK")
+                reply = _call_with_timeout(lambda: llm_complete("Reply with exactly: OK"), 240, "test connection")
                 return {"ok": True, "detail": str(reply)[:200], "provider": get_llm_settings()["provider"]}
             finally:
                 update_llm_settings(saved)
-        reply = llm_complete("Reply with exactly: OK")
+        reply = _call_with_timeout(lambda: llm_complete("Reply with exactly: OK"), 240, "test connection")
         return {"ok": True, "detail": str(reply)[:200], "provider": get_llm_settings()["provider"]}
     except Exception as e:
         return {"ok": False, "detail": str(e)[:300], "provider": (settings or get_llm_settings()).get("provider")}
