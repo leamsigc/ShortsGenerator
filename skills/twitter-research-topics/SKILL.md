@@ -6,7 +6,8 @@ description: |
   region (e.g. "futbol mexico europa usa"), researches each one via X search
   + WebSearch, and creates a standalone [topic-research].md file per topic
   with: viral title, news context, media/video links, 2 TTS-ready short
-  video scripts (virality + shock), and source post + engagement stats.
+  video scripts (virality + shock), source post + engagement stats, and a
+  data-calibrated SEO YouTube title (via the youtube-title subskill).
   Optionally hands each topic to the short-generator skill to produce a
   finished Short from the collected video links + approved script.
 
@@ -102,7 +103,7 @@ For each topic, create a file named ````
   └── topics-report.md
 ```` in
 `.twitter-research/` (or the configured output dir). The file MUST contain
-these 5 sections (in this order):
+these 6 sections (in this order; section 6 is filled in Step 5):
 
 ```markdown
 # Topic Research: <Topic Name>
@@ -138,6 +139,13 @@ these 5 sections (in this order):
 **Post principal:** <url>
 - Respuestas: X | Reposts: X | Me gusta: X | Reproducciones: X
 **¿Qué tan caliente está?** <hotness rating + note>
+
+## 6. Título SEO para YouTube
+**Título recomendado:** <title> (<score>/10)
+**Alternativo A:** <angle> — <title> (<score>/10)
+**Alternativo B:** <angle> — <title> (<score>/10)
+**Keywords para descripción:** <3-5 search phrases>
+**Por qué funciona:** <rules hit from youtube-title>
 ```
 
 **Script writing rules (for TTS / short vertical video):**
@@ -167,7 +175,23 @@ Create an index file listing all topics, their hotness, and file links:
 ``` |
 ```
 
-### Step 5 — Optional: Generate Shorts (`shorts:on`)
+### Step 5 — Generate SEO YouTube Title (subskill: `youtube-title`)
+
+For each topic file, load the subskill and produce the best SEO-targeted,
+attention-grabbing YouTube title:
+
+1. Load it: `skill youtube-title`
+2. Generate 5 candidates from the topic's script hook + key facts, scored
+   on SEO keyword, ALL-CAPS power word, specificity (score/names), stake,
+   and length (45–70 chars) against the channel's own CTR/views data.
+3. Keep the best title + 2 A/B alternates and **write them into section 6**
+   of the topic file (see template), plus 3-5 description keywords.
+4. These titles are the ones used later for the Shorts/YouTube upload.
+
+**Why this step exists:** titles are the #1 lever on the channel's own
+data (same video, different title = 13× views). Never skip it.
+
+### Step 6 — Optional: Generate Shorts (`shorts:on`)
 
 For each topic, hand off to the short-generator skill:
 
@@ -179,11 +203,12 @@ For each topic, hand off to the short-generator skill:
    short-generator Step 4/5 (fallback sources if search finds <5 URLs)
 5. **Show the generated script for user approval before generating** the video
 6. On approval, generate the Short and download the videos from the links
+7. Use the **section 6 recommended YouTube title** as the video/upload title
 
 **Important**: Always show the script and get explicit user approval before
 calling the final video generation endpoint.
 
-### Step 6 — Report Completion
+### Step 7 — Report Completion
 
 ```
 ✅ Twitter/X Research Topics Mode Complete!

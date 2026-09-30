@@ -28,6 +28,10 @@ openai==3.8.0
 google-genai>=2.22.0
 curl_cffi==0.16.3
 yt-dlp==2026.8.19
+# yt-dlp `--cookies-from-browser chrome` on Linux needs secretstorage
+# (GNOME keyring via jeepney); without it every download dies with
+# "secretstorage not available" and the API returns 500.
+secretstorage>=3.3
 onnxruntime==1.23.2
 soundfile==0.14.0
 numpy==2.2.6

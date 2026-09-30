@@ -44,16 +44,43 @@ class InstagramDownloader:
     def download_video(self, url: str) -> Dict[str, Any]:
         """
         Download a video from Instagram
-        
+
         Args:
             url (str): Instagram video URL
-            
+
         Returns:
             Dict[str, Any]: Information about the downloaded video
-            
+
         Raises:
             Exception: If download fails
         """
+        try:
+            return self._extract_and_download(url)
+        except Exception as e:
+            # Browser cookie extraction can fail (missing secretstorage,
+            # locked keyring, no DBUS session, headless/container...).
+            # Retry once without cookies instead of failing the request.
+            if self.ydl_opts.get('cookiesfrombrowser') and self._is_cookie_error(e):
+                print(f"[InstagramDownloader] Cookie extraction failed ({e}); "
+                      f"retrying without browser cookies")
+                self.ydl_opts.pop('cookiesfrombrowser', None)
+                return self._extract_and_download(url)
+            raise
+
+    @staticmethod
+    def _is_cookie_error(e: BaseException) -> bool:
+        message = str(e).lower()
+        return any(marker in message for marker in (
+            'secretstorage',
+            'keyring',
+            'dbus',
+            'cookies from browser',
+            'browser cookies',
+            'failed to decrypt',
+            'no module named',
+        ))
+
+    def _extract_and_download(self, url: str) -> Dict[str, Any]:
         try:
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -68,14 +95,8 @@ class InstagramDownloader:
                     'download_time': datetime.now().isoformat(),
                     'status': 'success'
                 }
-                
+
         except Exception as e:
-            error_info = {
-                'status': 'error',
-                'error_message': str(e),
-                'url': url,
-                'time': datetime.now().isoformat()
-            }
             raise Exception(f"Failed to download video: {str(e)}") from e
 
     def update_options(self, new_options: Dict[str, Any]) -> None:

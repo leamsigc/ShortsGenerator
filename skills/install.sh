@@ -51,6 +51,7 @@ SKILLS=(
   twitter-research-analyze
   twitter-research-report
   twitter-research-topics
+  youtube-title
   reddit-research
   reddit-research-scrape
   reddit-research-generate

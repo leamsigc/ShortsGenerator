@@ -9,7 +9,9 @@ description: |
      and a TARGET AUDIENCE, auto-detect the top 5-10 currently-trending
      topics, and for each one create a standalone [topic-research].md file
      with: viral title, news context, media/video links, 2 TTS-ready short
-     video scripts (virality + shock), and source post + engagement stats.
+     video scripts (virality + shock), source post + engagement stats, and
+     an SEO-optimized YouTube title (youtube-title subskill, calibrated on
+     the channel's own CTR/view data).
      Optionally hands each topic to the short-generator skill to produce a
      finished Short video from the collected video links + script.
 
@@ -104,11 +106,15 @@ Runs the full pipeline: research → topic files → optional Short videos.
 2. **Research each topic** — for each, pull news context, media/video links,
    and real engagement stats from X search (10+ posts, real numbers).
 3. **Create `[topic-research].md` files** — one per topic in `.twitter-research/`,
-   containing the 5 required sections (see below).
-4. **Optional Short generation** — if `shorts:on`, for each topic hand off to
+   containing the 6 required sections (see below).
+4. **SEO YouTube titles** — for each topic, load `skill youtube-title` and
+   generate the best SEO-targeted, attention-grabbing title (5 candidates
+   scored on keyword, ALL-CAPS power word, specificity, stake, length —
+   calibrated on the channel's own CTR/views data). Save as section 6.
+5. **Optional Short generation** — if `shorts:on`, for each topic hand off to
    `skill short-generator` with: the viral script + the collected video links +
    context. Script is shown for user approval, then the video is generated and
-   downloaded from the provided links.
+   downloaded from the provided links. Uses the section 6 title for upload.
 
 ### Required sections in each `[topic-research].md` file
 
@@ -119,6 +125,8 @@ Runs the full pipeline: research → topic files → optional Short videos.
    Format specifically for short vertical content, readable by a TTS (short
    punchy sentences, hooks, CTA).
 5. **Link to the source post + engagement stats** + how hot the topic is.
+6. **SEO YouTube title** — recommended title + 2 A/B alternates + description
+   keywords (via `youtube-title` subskill).
 
 ### Output Structure (Topics Mode)
 

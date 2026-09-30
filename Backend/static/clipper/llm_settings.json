@@ -5,6 +5,6 @@
   "model": "",
   "outline_enabled": true,
   "g4f_use_cookies": true,
-  "g4f_provider": "Cloudflare",
-  "g4f_model": "kimi-k2.6"
+  "g4f_provider": "Gemini",
+  "g4f_model": "gemini-3.6-flash"
 }
