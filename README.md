@@ -1,6 +1,6 @@
 # ShortsGenerator
 
-![ShortGenerator](/logo.jpeg)
+![ShortGenerator](logo.jpeg)
 
 Automate YouTube Shorts creation locally — script generation, stock video search, TTS voiceover, subtitles, background music, and social media scheduling.
 
@@ -21,11 +21,11 @@ Automate YouTube Shorts creation locally — script generation, stock video sear
 
 
 [YouTube](https://youtu.be/s7wZ7OxjMxA) or click on the image.
-[![Short Generator](/logo.jpeg)](https://youtu.be/s7wZ7OxjMxA "Short generator, video generator")
+[![Short Generator](logo.jpeg)](https://youtu.be/s7wZ7OxjMxA "Short generator, video generator")
 
-![Generate](/static/assets/images/Screen1.png)
-![Generate 2](/static/assets/images/Screenshot2.png?raw=true)
-![Generate 3](/static/assets/images/Screenshot3.png?raw=true)
+![Generate](Backend/static/assets/images/Screen1.png)
+![Generate 2](Backend/static/assets/images/Screenshot2.png?raw=true)
+![Generate 3](Backend/static/assets/images/Screenshot3.png?raw=true)
 
 ## Local usage:
 
