@@ -273,6 +273,7 @@ const HandleGenerateVideo = async () => {
         search: video.value.search.split(","),
         aiModel: video.value.aiModel || globalSettings.value.aiModel,
         selectedVideoUrls: video.value.selectedVideoUrls,
+        videoOrderMode: (video.value as any).videoOrderMode || "random",
         subtitlesPosition: video.value.subtitlePosition
           ? `center,${video.value.subtitlePosition}`
           : "",
@@ -323,6 +324,7 @@ const HandleRegenerateVideoOnly = async () => {
         search: video.value.search.split(","),
         aiModel: video.value.aiModel || globalSettings.value.aiModel,
         selectedVideoUrls: video.value.selectedVideoUrls,
+        videoOrderMode: (video.value as any).videoOrderMode || "random",
         subtitlesPosition: video.value.subtitlePosition
           ? `center,${video.value.subtitlePosition}`
           : "",

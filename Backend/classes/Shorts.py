@@ -10,7 +10,8 @@ from video import *
 from tiktokvoice import *
 from uuid import uuid4
 from apiclient.errors import HttpError
-from moviepy.config import change_settings
+# NOTE: moviepy 2.x removed moviepy.config.change_settings. Subtitles render
+# via TextClip(method="label"), which uses PIL — no ImageMagick needed.
 
 class Shorts:
     """
@@ -45,9 +46,6 @@ class Shorts:
         """
         global GENERATING
         GENERATING = True
-
-
-        change_settings({"IMAGEMAGICK_BINARY": os.getenv("IMAGEMAGICK_BINARY")})
 
 
         self.video_subject = video_subject
@@ -97,6 +95,11 @@ class Shorts:
         self.image_duration = 5.0
         self.image_durations = []
         self.clip_duration = self.globalSettings.get("clipDurationSettings", {}).get("default", 10)
+        # Clip order mode: "random" (default, shuffle), "selection" (order of
+        # selection as received), "custom" (user-defined order, respected as-is).
+        # "selection" and "custom" both preserve the incoming sequence — the
+        # distinction lives in the frontend (read-only badges vs reorder UI).
+        self.video_order_mode = "random"
 
     @property
     def get_final_video_path(self):
@@ -201,9 +204,22 @@ class Shorts:
 
         return self.search_terms
 
+    @staticmethod
+    def normalize_video_order_mode(value) -> str:
+        """Validate the clip order mode. Defaults to "random"."""
+        mode = str(value or "random").strip().lower()
+        return mode if mode in ("random", "selection", "custom") else "random"
+
     #Download the videos base on the search terms from pexel api
-    def DownloadVideos(self, selectedVideoUrls):
+    def DownloadVideos(self, selectedVideoUrls, video_order_mode=None):
         global GENERATING
+
+        if video_order_mode is not None:
+            self.video_order_mode = self.normalize_video_order_mode(video_order_mode)
+        else:
+            self.video_order_mode = self.normalize_video_order_mode(
+                getattr(self, "video_order_mode", "random")
+            )
 
         # Search for videos
         # Check if the selectedVideoUrls is empty
@@ -211,6 +227,12 @@ class Shorts:
             print(colored(f"Selected videos: {selectedVideoUrls}", "green"))
             # filter the selectedVideoUrls is a Array of objects with videoUrl object that has a link key with a value we use the value of the link key
             self.video_urls = [video_url["videoUrl"]["link"] for video_url in selectedVideoUrls]
+            if self.video_order_mode == "random":
+                import random as _random
+                _random.shuffle(self.video_urls)
+                print(colored("[+] Video order mode: random — shuffled selected clips", "cyan"))
+            else:
+                print(colored(f"[+] Video order mode: {self.video_order_mode} — respecting received sequence", "cyan"))
             # log the selectedVideoUrls
             print(colored(f"Selected video urls: {self.video_urls}", "green"))
         else:
@@ -233,6 +255,10 @@ class Shorts:
                     if url not in self.video_urls:
                         self.video_urls.append(url)
                         break
+            if self.video_order_mode == "random" and len(self.video_urls) > 1:
+                import random as _random
+                _random.shuffle(self.video_urls)
+                print(colored("[+] Video order mode: random — shuffled auto-searched clips", "cyan"))
 
         # Check if video_urls is empty
         if not self.video_urls:
@@ -367,7 +393,7 @@ class Shorts:
                 if audio_end > dur:
                     audio_end = dur
                 if audio_end > audio_start:
-                    audio_clip = audio_clip.subclip(audio_start, audio_end)
+                    audio_clip = audio_clip.subclipped(audio_start, audio_end)
                 trimmed_path = os.path.join(temp_dir_path, f"{uuid4()}.mp3")
                 audio_clip.write_audiofile(trimmed_path)
                 audio_clip.close()
@@ -484,6 +510,9 @@ class Shorts:
             image_duration=self.image_duration if hasattr(self, 'image_duration') else 5.0,
             image_durations=self.image_durations if hasattr(self, 'image_durations') else None,
             buffer_time=self.VIDEO_END_BUFFER,
+            video_order_mode=self.normalize_video_order_mode(
+                getattr(self, "video_order_mode", "random")
+            ),
         )
 
         print(colored(f"[-] Next step: {combined_video_path}", "green"))
@@ -568,17 +597,17 @@ class Shorts:
             original_duration = video_clip.duration
             original_audio = video_clip.audio
 
-            song_clip = AudioFileClip(song_path).set_fps(44100)
-            song_clip = song_clip.volumex(0.1).set_fps(44100)
+            song_clip = AudioFileClip(song_path).with_fps(44100)
+            song_clip = song_clip.with_volume_scaled(0.1).with_fps(44100)
 
             if song_clip.duration < original_duration:
                 n_loops = int(original_duration / song_clip.duration) + 1
-                song_clip = concatenate_audioclips([song_clip] * n_loops).set_duration(original_duration)
+                song_clip = concatenate_audioclips([song_clip] * n_loops).with_duration(original_duration)
 
             comp_audio = CompositeAudioClip([original_audio, song_clip])
-            video_clip = video_clip.set_audio(comp_audio)
-            video_clip = video_clip.set_fps(30)
-            video_clip = video_clip.set_duration(original_duration)
+            video_clip = video_clip.with_audio(comp_audio)
+            video_clip = video_clip.with_fps(30)
+            video_clip = video_clip.with_duration(original_duration)
 
             video_clip.write_videofile(output_path, threads=2)
 

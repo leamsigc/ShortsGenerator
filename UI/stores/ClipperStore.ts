@@ -50,6 +50,9 @@ export interface LlmSettings {
   g4f_use_cookies: boolean
   g4f_provider: string
   g4f_model: string
+  fallback_enabled: boolean
+  fallback_provider: string
+  fallback_model: string
 }
 
 export interface G4fProviderInfo {

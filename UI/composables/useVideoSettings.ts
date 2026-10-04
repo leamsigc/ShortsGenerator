@@ -37,6 +37,8 @@ export interface SoundEffectEntry {
   startTime: number;
 }
 
+export type VideoOrderMode = "random" | "selection" | "custom";
+
 export const useVideoSettings = () => {
   const defaults = {
     script: "",
@@ -48,6 +50,7 @@ export const useVideoSettings = () => {
     finalVideoUrl: "",
     selectedAudio: "",
     selectedVideoUrls: [] as VideoResultFormat[],
+    videoOrderMode: "random" as VideoOrderMode,
     aspectRatio: "9:16",
     subtitleTemplate: "classic",
     subtitleFont: "",
@@ -77,6 +80,11 @@ export const useVideoSettings = () => {
     if (!(key in video.value)) {
       ;(video.value as any)[key] = (defaults as any)[key]
     }
+  }
+  // Guard against stale/invalid order modes from older builds
+  const validModes: VideoOrderMode[] = ["random", "selection", "custom"]
+  if (!validModes.includes((video.value as any).videoOrderMode)) {
+    ;(video.value as any).videoOrderMode = "random"
   }
 
   return { video, defaults }

@@ -35,12 +35,18 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "g4f_use_cookies": True,  # g4f Gemini path uses browser cookies; off = cookie-free g4f chain
     "g4f_provider": "DeepAI",  # g4f provider class name (see /llm/g4f-providers)
     "g4f_model": "gemini-2.5-flash-lite",  # model for the selected g4f provider
+    # OFF = fail fast with a clear "model not available" error when the
+    # selected model fails. ON = try a backup before giving up.
+    "fallback_enabled": False,
+    "fallback_provider": "",  # backup g4f provider ("" = built-in backup chain)
+    "fallback_model": "",     # backup g4f model ("" = built-in default)
 }
 
 PROVIDERS = ["gemini", "g4f", "openai", "ollama", "qwen"]
 
 
-def get_llm_settings() -> Dict[str, Any]:
+def _read_persistent_settings() -> Dict[str, Any]:
+    """Settings from defaults + the JSON file + env vars (never the test override)."""
     settings = dict(DEFAULT_SETTINGS)
     if _SETTINGS_PATH.exists():
         try:
@@ -74,8 +80,49 @@ def get_llm_settings() -> Dict[str, Any]:
     return settings
 
 
+# In-memory settings used ONLY while "Test connection" runs. Test never
+# writes the JSON file: writing + restoring raced with the Save button and
+# could silently revert a saved provider (e.g. gemini -> g4f, which made
+# generation use browser cookies again).
+_OVERRIDE: Dict[str, Any] = {}
+_OVERRIDE_LOCK = threading.Lock()
+_TEST_LOCK = threading.Lock()
+
+
+def get_llm_settings() -> Dict[str, Any]:
+    settings = _read_persistent_settings()
+    if _OVERRIDE:
+        settings.update(_OVERRIDE)
+        if settings.get("provider") not in PROVIDERS:
+            settings["provider"] = DEFAULT_SETTINGS["provider"]
+    return settings
+
+
+class _settings_override:
+    """Temporarily apply settings in memory (used by Test connection)."""
+
+    def __init__(self, values: Dict[str, Any]):
+        self.values = dict(values or {})
+        self.previous: Dict[str, Any] = {}
+
+    def __enter__(self) -> "_settings_override":
+        global _OVERRIDE
+        with _OVERRIDE_LOCK:
+            self.previous = dict(_OVERRIDE)
+            _OVERRIDE = dict(self.values)
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        global _OVERRIDE
+        with _OVERRIDE_LOCK:
+            _OVERRIDE = self.previous
+        return False
+
+
 def update_llm_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
-    current = get_llm_settings()
+    # Base = file + env only, so a concurrent Test override can never be
+    # baked into the saved file.
+    current = _read_persistent_settings()
     for key in ("provider", "base_url", "api_key", "model"):
         if key in new_settings:
             current[key] = str(new_settings[key]).strip()
@@ -87,6 +134,12 @@ def update_llm_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
         current["g4f_provider"] = str(new_settings["g4f_provider"]).strip()
     if "g4f_model" in new_settings:
         current["g4f_model"] = str(new_settings["g4f_model"]).strip()
+    if "fallback_enabled" in new_settings:
+        current["fallback_enabled"] = bool(new_settings["fallback_enabled"])
+    if "fallback_provider" in new_settings:
+        current["fallback_provider"] = str(new_settings["fallback_provider"]).strip()
+    if "fallback_model" in new_settings:
+        current["fallback_model"] = str(new_settings["fallback_model"]).strip()
     if current["provider"] not in PROVIDERS:
         current["provider"] = DEFAULT_SETTINGS["provider"]
     _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -181,21 +234,39 @@ def test_llm_connection(settings: Optional[Dict[str, Any]] = None) -> Dict[str, 
 
     Hard-capped at 240s in a worker thread so the HTTP request always
     resolves — a hung provider reports failure instead of hanging forever.
+
+    The candidate settings are applied IN MEMORY only: the JSON file is never
+    touched, so a Test can never overwrite or revert what Save wrote (that
+    race used to flip the provider back to g4f and re-enable browser cookies).
     """
     from gpt import _call_with_timeout
+
+    def _run() -> Dict[str, Any]:
+        reply = _call_with_timeout(lambda: llm_complete("Reply with exactly: OK"), 240, "test connection")
+        detail = str(reply)[:200]
+        eff = get_llm_settings()
+        if (str(eff.get("provider") or "") == "g4f"
+                and str(eff.get("g4f_provider") or "") == "Gemini"
+                and eff.get("g4f_use_cookies")):
+            # Cookie path: report cookie health in the result so the Settings
+            # page shows whether the cookies (not just the model) are OK.
+            try:
+                from gpt import describe_gemini_cookies
+                detail = (detail + " | " + describe_gemini_cookies())[:400]
+            except Exception:
+                pass
+        return {"ok": True, "detail": detail, "provider": eff.get("provider")}
+
     try:
         if settings:
-            saved = get_llm_settings()
-            update_llm_settings(settings)
-            try:
-                reply = _call_with_timeout(lambda: llm_complete("Reply with exactly: OK"), 240, "test connection")
-                return {"ok": True, "detail": str(reply)[:200], "provider": get_llm_settings()["provider"]}
-            finally:
-                update_llm_settings(saved)
-        reply = _call_with_timeout(lambda: llm_complete("Reply with exactly: OK"), 240, "test connection")
-        return {"ok": True, "detail": str(reply)[:200], "provider": get_llm_settings()["provider"]}
+            # Serialize overlapping tests so one override can't stomp another.
+            with _TEST_LOCK:
+                with _settings_override(settings):
+                    return _run()
+        return _run()
     except Exception as e:
-        return {"ok": False, "detail": str(e)[:300], "provider": (settings or get_llm_settings()).get("provider")}
+        return {"ok": False, "detail": str(e)[:300],
+                "provider": (settings or get_llm_settings()).get("provider")}
 
 
 def masked_llm_settings() -> Dict[str, Any]:

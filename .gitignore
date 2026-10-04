@@ -21,6 +21,8 @@ node_modules
 Backend/static/generated_videos
 Backend/static/assets/qwen_refs
 Backend/static/assets/temp/*
+Backend/static/clipper/projects
+Backend/static/clipper/broll_cache
 Backend/data
 
 # Claude / Opencode local config (global skills are symlinked from ./skills/)
@@ -40,6 +42,8 @@ skills/**/node_modules/**
 .ig-research
 .twitter-research
 .reddit-research
+.youtube-research
 .venv
 .venv/*
 .playwright-*
+*.log

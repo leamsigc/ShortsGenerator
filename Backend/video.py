@@ -16,12 +16,20 @@ import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 from typing import List, Optional
-from moviepy.editor import *
+# moviepy 2.x: `moviepy.editor` and `moviepy.video.fx.all` are gone — import
+# the names we use explicitly from the top-level package / fx module.
+from moviepy import (
+    VideoFileClip,
+    AudioFileClip,
+    TextClip,
+    CompositeVideoClip,
+    concatenate_videoclips,
+)
+from moviepy.video.fx import Crop, Loop
+from moviepy.video.tools.subtitles import SubtitlesClip
 from termcolor import colored
 from dotenv import load_dotenv
 from datetime import timedelta
-from moviepy.video.fx.all import crop
-from moviepy.video.tools.subtitles import SubtitlesClip
 
 load_dotenv("../.env")
 
@@ -443,7 +451,7 @@ def _ffmpeg_concat_clips(clip_paths: List[str], target_duration: float, target_w
         return False
 
 
-def combine_videos(video_paths: List[str], max_duration: float, max_clip_duration: int, threads: int, aspect_ratio: str = "9:16", image_paths: Optional[List[str]] = None, image_duration: float = 5.0, image_durations: Optional[List[float]] = None, buffer_time: float = 3.0) -> str:
+def combine_videos(video_paths: List[str], max_duration: float, max_clip_duration: int, threads: int, aspect_ratio: str = "9:16", image_paths: Optional[List[str]] = None, image_duration: float = 5.0, image_durations: Optional[List[float]] = None, buffer_time: float = 3.0, video_order_mode: str = "random") -> str:
     video_id = uuid.uuid4()
     temp_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "temp"))
     os.makedirs(temp_dir, exist_ok=True)
@@ -477,6 +485,26 @@ def combine_videos(video_paths: List[str], max_duration: float, max_clip_duratio
                 valid_paths = [image_video_path] + valid_paths
             else:
                 print(colored("[-] Failed to create image video, skipping images", "yellow"))
+
+    mode = str(video_order_mode or "random").strip().lower()
+    if mode not in ("random", "selection", "custom"):
+        mode = "random"
+    if mode == "random":
+        # Keep the generated image intro first; shuffle only real clips.
+        head = []
+        tail = valid_paths
+        if image_video_path and valid_paths and valid_paths[0] == image_video_path:
+            head = valid_paths[:1]
+            tail = valid_paths[1:]
+        if len(tail) > 1:
+            import random as _random
+            _random.shuffle(tail)
+            valid_paths = head + tail
+            print(colored("[+] Video order mode: random — shuffled combine order", "cyan"))
+        else:
+            print(colored(f"[+] Video order mode: {mode} — respecting clip sequence", "cyan"))
+    else:
+        print(colored(f"[+] Video order mode: {mode} — respecting clip sequence", "cyan"))
 
     print(colored(f"[+] Combining {len(valid_paths)} videos at {aspect_ratio} ({target_w}x{target_h})...", "blue"))
 
@@ -570,26 +598,24 @@ def combine_videos(video_paths: List[str], max_duration: float, max_clip_duratio
                 print(colored(f"[-] Could not open {video_path}: {e}", "yellow"))
                 continue
 
-            clip = clip.without_audio().subclip(seg_start, seg_start + seg_dur)
+            clip = clip.without_audio().subclipped(seg_start, seg_start + seg_dur)
 
             source_ratio = round(clip.w / clip.h, 4) if clip.h else 1.0
             if source_ratio < target_ratio:
-                clip = crop(
-                    clip,
+                clip = clip.with_effects([Crop(
                     width=clip.w,
                     height=round(clip.w / target_ratio),
                     x_center=clip.w / 2,
                     y_center=clip.h / 2,
-                )
+                )])
             else:
-                clip = crop(
-                    clip,
+                clip = clip.with_effects([Crop(
                     width=round(target_ratio * clip.h),
                     height=clip.h,
                     x_center=clip.w / 2,
                     y_center=clip.h / 2,
-                )
-            clip = clip.resize((target_w, target_h))
+                )])
+            clip = clip.resized((target_w, target_h))
 
             clips.append(clip)
             used_up_to[video_path] = seg_start + seg_dur
@@ -604,7 +630,7 @@ def combine_videos(video_paths: List[str], max_duration: float, max_clip_duratio
         return None
 
     final_clip = concatenate_videoclips(clips)
-    final_clip = final_clip.set_fps(30)
+    final_clip = final_clip.with_fps(30)
     final_clip.write_videofile(combined_video_path, threads=max(1, threads))
     final_clip.close()
     for c in clips:
@@ -818,9 +844,9 @@ def generate_video(
     # --- MOVIEPY FALLBACK ---
     def generator(txt):
         return TextClip(
-            txt,
+            text=txt,
             font=font_path,
-            fontsize=fontsize,
+            font_size=fontsize,
             color=color,
             stroke_color=stroke_color,
             stroke_width=stroke_width,
@@ -828,12 +854,12 @@ def generate_video(
         )
 
     print(colored(f"[+] Subtitles Path: {subtitles_path}", "green"))
-    subtitles = SubtitlesClip(subtitles_path, generator)
+    subtitles = SubtitlesClip(subtitles_path, make_textclip=generator)
 
     try:
         base_video = VideoFileClip(combined_video_path)
         if base_video.w != target_w or base_video.h != target_h:
-            base_video = base_video.resize((target_w, target_h))
+            base_video = base_video.resized((target_w, target_h))
     except Exception as e:
         print(colored(f"[-] Error loading combined video: {e}", "red"))
         return None
@@ -844,23 +870,20 @@ def generate_video(
 
     if base_video.duration < target_duration:
         try:
-            base_video = base_video.loop(duration=target_duration)
+            base_video = base_video.with_effects([Loop(duration=target_duration)])
         except Exception:
-            try:
-                base_video = base_video.set_duration(target_duration)
-            except Exception:
-                pass
+            base_video = base_video.with_duration(target_duration)
     elif base_video.duration > target_duration:
-        base_video = base_video.subclip(0, target_duration)
+        base_video = base_video.subclipped(0, target_duration)
 
-    subtitles = subtitles.set_duration(target_duration)
+    subtitles = subtitles.with_duration(target_duration)
 
     result = CompositeVideoClip([
         base_video,
-        subtitles.set_pos((horizontal_subtitles_position, vertical_subtitles_position))
-    ]).set_duration(target_duration)
+        subtitles.with_position((horizontal_subtitles_position, vertical_subtitles_position))
+    ]).with_duration(target_duration)
 
-    result = result.set_audio(audio)
+    result = result.with_audio(audio)
 
     video_name = os.path.join(generated_dir, f"{uuid4()}-final.mp4")
     print(colored("[+] Writing video...", "green"))

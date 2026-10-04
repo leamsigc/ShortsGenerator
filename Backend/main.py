@@ -41,7 +41,6 @@ from youtube import upload_video
 from apiclient.errors import HttpError
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
-from moviepy.config import change_settings
 from classes.instagram_downloader import InstagramDownloader
 from leadgen.adapters.devtools_adapter import DevToolsAdapter
 from leadgen.enrichment import enrich_campaign_description, enrich_campaign_with_website, enhance_profile_analysis, find_related_niche_queries, suggest_engagement, analyze_competitor, analyze_viral_post, generate_lead_keywords, generate_engagement_keywords, generate_synthetic_leads, qualify_search_results
@@ -51,7 +50,8 @@ from clipper_routes import register_clipper_routes
 # Set environment variables
 SESSION_ID = os.getenv("TIKTOK_SESSION_ID")
 openai_api_key = os.getenv('OPENAI_API_KEY')
-change_settings({"IMAGEMAGICK_BINARY": os.getenv("IMAGEMAGICK_BINARY")})
+# NOTE: moviepy 2.x removed moviepy.config.change_settings. Subtitles render
+# via TextClip(method="label"), which uses PIL — no ImageMagick needed.
 
 
 # Initialize Flask
@@ -92,6 +92,23 @@ def create_folders():
 
 # Create folders
 create_folders()
+
+
+def _normalize_video_order_mode(value) -> str:
+    """Validate clip order mode from the frontend. Defaults to "random"."""
+    mode = str(value or "random").strip().lower()
+    return mode if mode in ("random", "selection", "custom") else "random"
+
+
+def _apply_video_order_to_paths(paths, mode: str):
+    """Shuffle pre-downloaded paths in place when mode is random."""
+    if mode == "random" and paths and len(paths) > 1:
+        import random as _random
+        _random.shuffle(paths)
+        print(colored("[+] Video order mode: random — shuffled pre-downloaded clips", "cyan"))
+    else:
+        print(colored(f"[+] Video order mode: {mode} — respecting clip sequence", "cyan"))
+    return paths
 
 # Instagram video download endpoint
 @app.route("/api/instagram/download", methods=["POST"])
@@ -187,18 +204,20 @@ def generate():
         image_duration = data.get("imageDuration", 5.0)
         image_durations = data.get("imageDurations", [])
         clip_duration = int(data.get("clipDuration", 10))
+        video_order_mode = _normalize_video_order_mode(data.get("videoOrderMode", "random"))
         videoClass = Shorts(data["videoSubject"], paragraph_number, ai_model, data["customPrompt"], script_template=script_template)
         videoClass.clip_duration = clip_duration
+        videoClass.video_order_mode = video_order_mode
         # Generate a script
         videoClass.GenerateScript()
         # Generate search terms
         videoClass.GenerateSearchTerms()
 
         if directVideoPaths and len(directVideoPaths) > 0:
-            videoClass.video_paths = directVideoPaths
-            print(colored(f"[+] Using {len(directVideoPaths)} pre-downloaded video(s): {directVideoPaths}", "green"))
+            videoClass.video_paths = _apply_video_order_to_paths(list(directVideoPaths), video_order_mode)
+            print(colored(f"[+] Using {len(directVideoPaths)} pre-downloaded video(s): {videoClass.video_paths}", "green"))
         else:
-            videoClass.DownloadVideos(selectedVideoUrls)
+            videoClass.DownloadVideos(selectedVideoUrls, video_order_mode=video_order_mode)
 
         if images:
             temp_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "temp"))
@@ -391,12 +410,13 @@ def search_and_download():
     videoClass.aspect_ratio = aspect_ratio
     videoClass.custom_subtitle = custom_subtitle
     videoClass.clip_duration = int(data.get("clipDuration", 10))
+    videoClass.video_order_mode = _normalize_video_order_mode(data.get("videoOrderMode", "random"))
 
     if directVideoPaths and len(directVideoPaths) > 0:
-        videoClass.video_paths = directVideoPaths
-        print(colored(f"[+] Using {len(directVideoPaths)} pre-downloaded video(s): {directVideoPaths}", "green"))
+        videoClass.video_paths = _apply_video_order_to_paths(list(directVideoPaths), videoClass.video_order_mode)
+        print(colored(f"[+] Using {len(directVideoPaths)} pre-downloaded video(s): {videoClass.video_paths}", "green"))
     else:
-        videoClass.DownloadVideos(selectedVideoUrls)
+        videoClass.DownloadVideos(selectedVideoUrls, video_order_mode=videoClass.video_order_mode)
 
     if images:
         temp_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "temp"))
@@ -522,12 +542,13 @@ def regenerate_video():
     videoClass.aspect_ratio = aspect_ratio
     videoClass.custom_subtitle = custom_subtitle
     videoClass.clip_duration = int(data.get("clipDuration", 10))
+    videoClass.video_order_mode = _normalize_video_order_mode(data.get("videoOrderMode", "random"))
 
     if directVideoPaths and len(directVideoPaths) > 0:
-        videoClass.video_paths = directVideoPaths
+        videoClass.video_paths = _apply_video_order_to_paths(list(directVideoPaths), videoClass.video_order_mode)
         print(colored(f"[+] Reusing {len(directVideoPaths)} pre-downloaded video(s)", "green"))
     else:
-        videoClass.DownloadVideos(selectedVideoUrls)
+        videoClass.DownloadVideos(selectedVideoUrls, video_order_mode=videoClass.video_order_mode)
 
     if images:
         temp_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "assets", "temp"))

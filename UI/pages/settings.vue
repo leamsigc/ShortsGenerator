@@ -419,6 +419,24 @@ function onG4fProviderChange(id: string) {
   const entry = g4fProvidersList.value.find(p => p.id === id);
   if (entry && entry.default_model) g4fModelSel.value = entry.default_model;
 }
+
+// Backup model: used only when the selected model fails and the toggle is ON
+const fallbackEnabled = ref(false);
+const fallbackProviderSel = ref(""); // "" = built-in backup chain
+const fallbackModelSel = ref("");
+const backupProviderModels = computed(() => {
+  if (!fallbackProviderSel.value) return [] as string[];
+  const entry = g4fProvidersList.value.find(p => p.id === fallbackProviderSel.value);
+  const models = entry?.models?.length ? [...entry.models] : [];
+  if (fallbackModelSel.value && !models.includes(fallbackModelSel.value)) {
+    return [fallbackModelSel.value, ...models];
+  }
+  return models;
+});
+function onBackupProviderChange(id: string) {
+  const entry = g4fProvidersList.value.find(p => p.id === id);
+  fallbackModelSel.value = entry && entry.default_model ? entry.default_model : "";
+}
 async function checkCookies() {
   cookieChecking.value = true;
   try {
@@ -448,6 +466,11 @@ function llmPayload() {
     model: llmModel.value || "",
     outline_enabled: !!llmOutline.value,
     g4f_use_cookies: llmProvider.value === "g4f" ? g4fUseCookies.value : true,
+    fallback_enabled: !!fallbackEnabled.value,
+    // Empty provider = built-in backup chain, so always send both fields
+    // (clearing them when the backup provider is set back to Automatic).
+    fallback_provider: fallbackProviderSel.value || "",
+    fallback_model: fallbackProviderSel.value ? (fallbackModelSel.value || "") : "",
   };
   if (llmProvider.value === "g4f") {
     payload.g4f_provider = g4fProviderSel.value;
@@ -472,6 +495,9 @@ async function handleSaveLlm() {
       g4fUseCookies.value = (settings as any).g4f_use_cookies !== false;
       if ((settings as any).g4f_provider) g4fProviderSel.value = (settings as any).g4f_provider;
       g4fModelSel.value = (settings as any).g4f_model || "";
+      fallbackEnabled.value = (settings as any).fallback_enabled === true;
+      fallbackProviderSel.value = (settings as any).fallback_provider || "";
+      fallbackModelSel.value = (settings as any).fallback_model || "";
     }
   } catch (e: any) {
     g4fSaveError.value = e?.data?.message || e?.message || "Could not save — is the backend running?";
@@ -523,6 +549,9 @@ try {
     llmMaskedKey.value = llmData.settings.api_key || "";
     g4fProviderSel.value = llmData.settings.g4f_provider || "DeepAI";
     g4fModelSel.value = llmData.settings.g4f_model || "gemini-2.5-flash-lite";
+    fallbackEnabled.value = llmData.settings.fallback_enabled === true;
+    fallbackProviderSel.value = llmData.settings.fallback_provider || "";
+    fallbackModelSel.value = llmData.settings.fallback_model || "";
     clipperStore.fetchG4fProviders().then(list => { if (list) g4fProvidersList.value = list; });
     if (g4fUseCookies.value) checkCookies();
   }
@@ -884,6 +913,17 @@ const HandleSaveSettings = async () => {};
               <button class="text-xs font-semibold underline" @click="refreshCookies()">Nuke &amp; re-import cookies</button>
             </div>
           </div>
+          <details class="mt-2 ml-6 text-xs text-clipper-ink/70 dark:text-white/70">
+            <summary class="cursor-pointer font-medium underline">How to check your cookies are working</summary>
+            <ol class="list-decimal ml-4 mt-2 space-y-1">
+              <li>The backend reads cookies from browsers on the PC that runs the backend — log in on that PC, not your phone.</li>
+              <li>In Firefox (or Chrome) open gemini.google.com and log in — no private/incognito window.</li>
+              <li>Send one message on the Gemini website. If it answers, the session is alive.</li>
+              <li>Press “Check cookies” above — it must say fresh. Then “Test connection” and watch backend.log (project folder, next to system.sh): expect <code>cookies OK (… missing: none)</code> then <code>first token after …s</code>.</li>
+              <li><code>MISSING SAPISID</code> or “No .google.com cookies” means the session expired: log out/in again in the same browser and re-test. No backend restart needed.</li>
+              <li>Stuck on <code>waiting for first token</code> until it times out means Google is throttling this session: wait, log out/in again — or switch Provider to <code>gemini</code> + API key.</li>
+            </ol>
+          </details>
         </div>
 
         <n-form-item v-if="showLlmBaseUrl" label="Base URL:" path="llmBaseUrl">
@@ -898,6 +938,47 @@ const HandleSaveSettings = async () => {};
         <n-form-item label="Model:" path="llmModel">
           <n-input v-model:value="llmModel" placeholder="e.g. gemini-3.5-flash, gemini-2.5-flash, gpt-4o-mini (empty = provider default)" class="w-full" />
         </n-form-item>
+
+        <n-checkbox v-model:checked="fallbackEnabled">
+          <span class="text-sm font-medium text-clipper-ink dark:text-white">Use backup if the selected model fails</span>
+        </n-checkbox>
+        <p class="text-xs text-clipper-ink/60 dark:text-white/60 mt-1 ml-6">
+          OFF (default): generation stops with a clear 'model not available' error.
+          ON: the backup below runs before failing.
+        </p>
+        <div
+          v-if="fallbackEnabled"
+          class="rounded-lg border border-clipper-ink/12 dark:border-white/10 bg-clipper-ink/[0.03] dark:bg-white/[0.03] p-3 space-y-3 mt-2"
+        >
+          <n-form-item label="Backup provider:" path="fallbackProvider">
+            <n-select
+              v-model:value="fallbackProviderSel"
+              :options="[
+                { label: 'Automatic (built-in backup chain)', value: '' },
+                ...g4fProvidersList.map(p => ({
+                  label: p.needs_cookies ? `${p.id} (needs cookies)` : (p.label && p.label !== p.id ? `${p.id} — ${p.label}` : p.id),
+                  value: p.id,
+                })),
+              ]"
+              class="w-full"
+              filterable
+              @update:value="onBackupProviderChange"
+            />
+          </n-form-item>
+          <n-form-item v-if="fallbackProviderSel" label="Backup model:" path="fallbackModel">
+            <n-select
+              v-model:value="fallbackModelSel"
+              :options="backupProviderModels.map(m => ({ label: m, value: m }))"
+              class="w-full"
+              filterable
+              tag
+            />
+          </n-form-item>
+          <p class="text-xs text-clipper-ink/60 dark:text-white/60 -mt-1 ml-1">
+            Automatic tries the cookie-free backup chain (no login, no API key), then your
+            Gemini cookies and the official API key — in that order.
+          </p>
+        </div>
 
         <n-checkbox v-model:checked="llmOutline">
           <span class="text-sm font-medium text-clipper-ink dark:text-white">Outline generation</span>
@@ -932,6 +1013,9 @@ const HandleSaveSettings = async () => {};
             {{ llmSaving ? 'Saving…' : 'Save' }}
           </button>
         </div>
+        <p class="text-xs text-clipper-ink/50 dark:text-white/45 pt-2">
+          “Test connection” only checks the fields above — it never saves them. Press Save to apply your changes.
+        </p>
       </div>
 
       <n-divider>TTS Settings</n-divider>
