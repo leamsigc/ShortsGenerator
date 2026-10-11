@@ -331,36 +331,48 @@ def generate_script_only():
     # Set generating to true
     GENERATING = True
 
-    clean_dir(os.path.join(os.path.dirname(__file__), "static/assets/subtitles/"))
-    print(colored("[+] Received script request...", "green"))
+    try:
+        clean_dir(os.path.join(os.path.dirname(__file__), "static/assets/subtitles/"))
+        print(colored("[+] Received script request...", "green"))
 
-    data = request.get_json()
-    video_subject = data["videoSubject"]
-    extra_prompt = data["extraPrompt"]
-    ai_model = data["aiModel"]
-    script_template = data.get("scriptTemplate", "")
-    script_length = data.get("scriptLength", "standard")
+        data = request.get_json()
+        video_subject = data["videoSubject"]
+        extra_prompt = data["extraPrompt"]
+        ai_model = data["aiModel"]
+        script_template = data.get("scriptTemplate", "")
+        script_length = data.get("scriptLength", "standard")
 
-    videoClass = Shorts(video_subject, 1, ai_model, "", extra_prompt=extra_prompt, script_template=script_template, script_length=script_length)
-    script = videoClass.GenerateScript()
+        videoClass = Shorts(video_subject, 1, ai_model, "", extra_prompt=extra_prompt, script_template=script_template, script_length=script_length)
+        script = videoClass.GenerateScript()
 
 
 
-    search_terms = videoClass.GenerateSearchTerms()
-    
-    # Show the search terms 
-    print(colored(f"Search terms: {', '.join(search_terms)}", "cyan"))
+        search_terms = videoClass.GenerateSearchTerms()
 
-    return jsonify(
-        {
-            "status": "success",
-            "message": "Script generated!",
-            "data": {
-                "script": script,
-                "search": search_terms
-            },
-        }
-    )
+        # Show the search terms
+        print(colored(f"Search terms: {', '.join(search_terms)}", "cyan"))
+
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Script generated!",
+                "data": {
+                    "script": script,
+                    "search": search_terms
+                },
+            }
+        )
+    except Exception as err:
+        # Return JSON (not Flask's debug HTML page) so the frontend can show
+        # the real reason instead of "<no response> Failed to fetch".
+        print(colored(f"[-] /api/script failed: {err}", "red"))
+        return jsonify(
+            {
+                "status": "error",
+                "message": str(err),
+                "data": [],
+            }
+        ), 500
 
 # Download the videos and split the script
 @app.route("/api/search-and-download", methods=["POST"])

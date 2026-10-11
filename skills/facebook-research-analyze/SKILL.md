@@ -1,12 +1,17 @@
 ---
 name: facebook-research-analyze
-version: 2.0.0
+version: 3.0.0
 description: |
   Analyze state — reads top 5 posts from scrape phase and performs deep
   deconstruction of each: audience retention signals, engagement patterns,
   hook analysis, content structure, psychological triggers. Also analyzes
   competitor top content for benchmarking. Generates detailed "why it worked"
   analysis with actionable replication guidance and competitive comparison.
+  Also runs the video-ideas pipeline (shared video-idea-research playbook):
+  the 10 Facebook videos/reels with the most views in a window
+  (week/month/year) → outlines → 5 video ideas × 3 scripts (viral /
+  storytelling / inspiration) + YouTube metadata (title, description, tags,
+  keywords) → ideas-report.md + REPORT.html.
 
 allowed-tools:
   - Bash
@@ -17,6 +22,7 @@ allowed-tools:
   - ChromeDevTools
   - WebSearch
   - Question
+  - Skill
 ---
 
 # Facebook Research — Analyze State (v2)
@@ -223,7 +229,37 @@ cat > ".fb-research/projects/<project-name>/<YYYY-MM-DD_HHMMSS>/top5-analysis.md
 ANALYSIS_EOF
 ```
 
-### 8. Report Completion
+### 8. Video Ideas Pipeline (`skill video-idea-research`)
+
+The deep deconstruction above feeds the ideas pipeline. When the user wants
+**video ideas for a topic**, run the shared playbook with `platform:facebook`:
+
+1. **Top 10 by views in the window** — rank the page's + competitors' top
+   reels/videos by view count (watch pages show real view counts; fallback to
+   engagement proxies and say so). Never invent numbers.
+2. **Outlines** — hook (first caption line / transcript opening), beats, CTA,
+   format, duration. Use the downloaded reels + `transcribe.sh` (Whisper) when
+   the skeleton matters.
+3. **5 ideas**, each grounded in ≥2 top videos with their real view counts.
+4. **3 scripts per idea** — viral (`viral_shorts`), storytelling
+   (`storytelling`), inspiration (`motivational`); TTS-ready, `[HOOK]`/`[CTA]`
+   labels only. Optional backend seeding:
+   ```bash
+   curl -s -X POST http://localhost:8080/api/script \
+     -H "Content-Type: application/json" \
+     -d '{"videoSubject":"<idea title>","extraPrompt":"<angle + outline context>","aiModel":"g4f","scriptTemplate":"viral_shorts","scriptLength":"standard"}'
+   ```
+5. **YouTube metadata per idea** (title via the `youtube-title` rubric,
+   description, tags, keywords).
+6. Save `video-ideas.json` in the session folder and render the report:
+   ```bash
+   node "$CLAUDE_SKILL_ROOT/scripts/build-ideas-report.js" <path-to-video-ideas.json>
+   # fallback: node ./skills/video-idea-research/scripts/build-ideas-report.js <path>
+   ```
+   → `ideas-report.md` + `REPORT.html`: **top 10 videos** + **5 ideas** with
+   scripts and metadata.
+
+### 9. Report Completion
 
 ```
 ✅ Facebook Research Analysis Complete!

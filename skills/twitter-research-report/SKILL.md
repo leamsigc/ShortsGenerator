@@ -1,12 +1,15 @@
 ---
 name: twitter-research-report
-version: 3.0.0
+version: 4.0.0
 description: |
   Report state — generates the final HTML report (REPORT.html) from
   raw-posts.json, audience-scores.json, content-drafts.json, and
   engagement-responses.json. Includes audience scoring matrix, top post
   analysis, content drafts, and pre-defined engagement responses for every
-  topic post. Saves engagement-responses.json for tracking.
+  topic post. In Video Ideas Mode it also renders the top-10 videos by views
+  (with outlines) and the 5 video ideas with 3 scripts each
+  (viral/storytelling/inspiration) plus YouTube metadata (title, description,
+  tags, keywords) via the shared video-idea-research report script.
 
 allowed-tools:
   - Bash
@@ -15,9 +18,26 @@ allowed-tools:
   - ChromeDevTools
 ---
 
-# Twitter/X Research — Report State (v3)
+# Twitter/X Research — Report State (v4)
 
 Generates the final HTML report with audience scoring, post links, and engagement responses.
+
+## Video Ideas Mode report
+
+When the session contains `video-ideas.json` (from the analyze state / the
+`video-idea-research` playbook), render the dedicated ideas report:
+
+```bash
+node "$CLAUDE_SKILL_ROOT/scripts/build-ideas-report.js" <path-to-video-ideas.json>
+# fallback: node ./skills/video-idea-research/scripts/build-ideas-report.js <path>
+```
+
+Writes `ideas-report.md` + `REPORT.html` next to the input with the two
+mandatory sections: **1) the top 10 videos** (rank, title, views, window,
+velocity, link, outline) and **2) the 5 video ideas** (titles, viral +
+storytelling + inspiration scripts, audiences, view estimate, media links,
+YouTube metadata). If the main `REPORT.html` also exists, append a link to it
+so both are reachable from one index.
 
 ## Preconditions
 

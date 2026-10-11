@@ -1,4 +1,4 @@
-g4f==8.6.0
+g4f==8.7.3
 # Required for the g4f Gemini path: g4f reads Firefox/Chrome login cookies
 # via browser-cookie3 (optional upstream dep). Without it every cookie read
 # silently returns {} and Settings shows "cookies outdated" forever.
@@ -27,7 +27,7 @@ oauth2client==4.1.3
 # NOTE: the `openai` package is currently unused (OpenAI-compatible providers
 # go through raw HTTP in llm_providers.py); kept pinned for tooling/tests.
 openai==3.22.1
-google-genai==2.26.0
+google-genai==2.29.0
 curl_cffi==0.16.3
 yt-dlp==2026.8.19
 # yt-dlp `--cookies-from-browser chrome` on Linux needs secretstorage

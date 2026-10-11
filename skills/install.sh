@@ -32,6 +32,7 @@ mkdir -p "$GLOBAL_DIR"
 
 # Skills to install (research families + their states)
 SKILLS=(
+  video-idea-research
   facebook-research
   facebook-research-setup
   facebook-research-scrape

@@ -1,14 +1,16 @@
 ---
 name: youtube-title
-version: 1.0.0
+version: 1.1.0
 description: |
   Generates the best SEO-targeted, attention-grabbing YouTube video title.
   Calibrated on the channel's own Shorts performance data (CTR, views,
-  impressions, avg view duration). Use whenever a YouTube title must be
+  impressions, avg view duration). Also produces the full upload package:
+  description, tags and keywords. Use whenever a YouTube title must be
   chosen or improved: called as a step by twitter-research-topics,
-  twitter-research (Topics Mode), short-generator, or standalone when the
-  user asks for "the best title", "SEO title", "title for my YouTube
-  video/Short".
+  twitter-research (Topics Mode), short-generator, the video-idea-research
+  playbook (every video idea gets title + description + tags + keywords),
+  or standalone when the user asks for "the best title", "SEO title",
+  "title for my YouTube video/Short", "description", "tags" or "keywords".
 
 allowed-tools:
   - Read
@@ -119,6 +121,33 @@ Channel totals (last period): **3,582 thumbnail impressions · 5.1% CTR ·
 **Keywords para descripción:** <3-5 search phrases, comma separated>
 **Por qué funciona:** <1-2 lines citing the data rules it hits>
 ```
+
+## Full upload package (title + description + tags + keywords)
+
+Every video produced by the `video-idea-research` playbook needs the complete
+metadata block, not just the title. After the title block above, output:
+
+```markdown
+## Paquete YouTube
+**Título:** <recommended title>
+**Descripción:** <2-4 lines: hook line first, summary of what the video shows,
+1-2 questions to drive comments, 3-5 hashtags at the end>
+**Tags:** <8-15 comma-separated tags: entities (player/club/matchup),
+competition, format words ("resumen", "goles", "polémica"), Spanish + English>
+**Keywords:** <8-15 search phrases: how people actually search —
+"<player> hoy", "<team> vs <team>", "liga mx jornada N">
+```
+
+Rules:
+- **Title**: the rubric above — keyword front-loaded, one ALL-CAPS power word,
+  concrete detail, stake, 45-70 chars, no emoji/hashtag spam, honest promise.
+- **Description**: first line repeats the title's promise with a twist (it shows
+  in search); 2-4 short lines; a question to farm comments; hashtags last.
+- **Tags/keywords**: mix narrow (exact matchup) + broad (competition) + format
+  words; include the English spelling of names when the audience is bilingual.
+- Backend seed option: `generate_metadata()` in `Backend/gpt.py` (title /
+  description / 6 keywords / social post) — treat its output as a first draft
+  and rewrite with these rules; the rubric-scored title wins.
 
 ## Quick examples (before → after, using channel evidence)
 

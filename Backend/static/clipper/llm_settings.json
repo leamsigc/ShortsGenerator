@@ -7,7 +7,7 @@
   "g4f_use_cookies": true,
   "g4f_provider": "Gemini",
   "g4f_model": "gemini-3.5-flash-lite",
-  "fallback_enabled": false,
+  "fallback_enabled": true,
   "fallback_provider": "",
   "fallback_model": ""
 }

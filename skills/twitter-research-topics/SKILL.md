@@ -1,6 +1,6 @@
 ---
 name: twitter-research-topics
-version: 1.0.0
+version: 1.1.0
 description: |
   Topics Mode — auto-detects the top trending topics in a broad category or
   region (e.g. "futbol mexico europa usa"), researches each one via X search
@@ -8,6 +8,10 @@ description: |
   with: viral title, news context, media/video links, 2 TTS-ready short
   video scripts (virality + shock), source post + engagement stats, and a
   data-calibrated SEO YouTube title (via the youtube-title subskill).
+  Also runs the video-ideas pipeline per topic (via the video-idea-research
+  subskill): top 10 videos by views in the window → outlines → 5 ideas × 3
+  scripts (viral / storytelling / inspiration) + YouTube metadata (title,
+  description, tags, keywords) → REPORT.html.
   Optionally hands each topic to the short-generator skill to produce a
   finished Short from the collected video links + approved script.
 
@@ -97,13 +101,10 @@ For each of the top N topics:
 
 ### Step 3 — Create `[topic-research].md` Files
 
-For each topic, create a file named ````
-.twitter-research/<YYYY-MM-DD_HHMMSS>/
-  ├── topic-research-<slug>.md        # one per trending topic (per-session)
-  └── topics-report.md
-```` in
-`.twitter-research/` (or the configured output dir). The file MUST contain
-these 6 sections (in this order; section 6 is filled in Step 5):
+For each topic, create a file named `topic-research-<slug>.md` in
+`.twitter-research/<YYYY-MM-DD_HHMMSS>/` alongside `topics-report.md`.
+The file MUST contain these 6 sections (in this order; section 6 is filled in
+Step 5):
 
 ```markdown
 # Topic Research: <Topic Name>
@@ -168,11 +169,7 @@ Create an index file listing all topics, their hotness, and file links:
 
 | # | Tema | Calor | Archivo |
 |---|------|-------|---------|
-| 1 | ... | 🔥🔥🔥 | ```
-.twitter-research/<YYYY-MM-DD_HHMMSS>/
-  ├── topic-research-<slug>.md        # one per trending topic (per-session)
-  └── topics-report.md
-``` |
+| 1 | ... | 🔥🔥🔥 | topic-research-<slug>.md |
 ```
 
 ### Step 5 — Generate SEO YouTube Title (subskill: `youtube-title`)
@@ -191,7 +188,35 @@ attention-grabbing YouTube title:
 **Why this step exists:** titles are the #1 lever on the channel's own
 data (same video, different title = 13× views). Never skip it.
 
-### Step 6 — Optional: Generate Shorts (`shorts:on`)
+### Step 6 — Video Ideas Pipeline (subskill: `video-idea-research`)
+
+Turn the research into a publishable slate of ideas: the **top 10 videos by
+views** in the window plus **5 video ideas** drawn from them, each with 3
+scripts and full YouTube metadata.
+
+1. Load it: `skill video-idea-research` and run with the topic + `platform:x`
+   (window default `month`: `week|month|year`).
+2. Rank the topic's video posts by **views inside the window** (open each
+   status page for the real count — never invent numbers), keep the top 10,
+   and extract each one's **outline** (hook, beats, CTA, format, duration).
+3. Draw **5 ideas** from the top-10 outlines (each idea ≥2 source videos).
+4. For each idea write **3 TTS-ready scripts** — viral (`viral_shorts`),
+   storytelling (`storytelling`), inspiration (`motivational`) — plus the
+   **YouTube metadata**: title (youtube-title rubric), description, tags,
+   keywords. Backend seeding when available:
+   ```bash
+   curl -s -X POST http://localhost:8080/api/script \
+     -H "Content-Type: application/json" \
+     -d '{"videoSubject":"<idea title>","extraPrompt":"<angle + outline context>","aiModel":"g4f","scriptTemplate":"viral_shorts","scriptLength":"standard"}'
+   ```
+5. Save `video-ideas.json` in the session folder, then render the report:
+   ```bash
+   node "$CLAUDE_SKILL_ROOT/scripts/build-ideas-report.js" .twitter-research/<timestamp>/video-ideas.json
+   # fallback: node ./skills/video-idea-research/scripts/build-ideas-report.js <path>
+   ```
+   → `ideas-report.md` + `REPORT.html` (top 10 videos + 5 ideas).
+
+### Step 7 — Optional: Generate Shorts (`shorts:on`)
 
 For each topic, hand off to the short-generator skill:
 
@@ -208,7 +233,7 @@ For each topic, hand off to the short-generator skill:
 **Important**: Always show the script and get explicit user approval before
 calling the final video generation endpoint.
 
-### Step 7 — Report Completion
+### Step 8 — Report Completion
 
 ```
 ✅ Twitter/X Research Topics Mode Complete!
@@ -216,12 +241,9 @@ calling the final video generation endpoint.
 Category: <category>
 Audience: <audience>
 Topics researched: <N>
-  - <topic 1> (🔥hotness) → .twitter-research/```
-.twitter-research/<YYYY-MM-DD_HHMMSS>/
-  ├── topic-research-<slug>.md        # one per trending topic (per-session)
-  └── topics-report.md
-```
+  - <topic 1> (🔥hotness) → topic-research-<slug>.md
   - ...
+Video ideas: 5 per topic (3 scripts each + YouTube metadata) → REPORT.html
 Shorts generated: <M/N>
 
 Next step (optional): skill twitter-research-report for a full HTML report

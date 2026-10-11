@@ -385,13 +385,14 @@ def _generate_via_g4f_gemini(prompt: str, attempt: int, sent_model: str, picked_
         print(colored(f"[+] {label}: done in {time.time() - started:.1f}s, {len(text)} chars", "green"))
         return text
 
-# Cookie-free g4f chain, verified live against the installed g4f release.
-# Free mirrors change fast, so the user's selection is tried first and the
-# rest serve as fallbacks in order.
+# Cookie-free g4f chain, verified live (Oct 2026 bench on a Spanish script
+# prompt: DeepSeek V3.2 ~2s strict-JSON, Perplexity ~3s, Llama-3.3-70B ~15s;
+# Gemini cookie path 1099-blocked, PhindAi/ChatGptOss/Qwen/DeepInfra mirrors
+# currently dead). The user's selection is tried first, rest as fallbacks.
 G4F_FREE_CHAIN = [
-    ("DeepAI", "gemini-2.5-flash-lite"),
     ("DeepAI", "deepseek-v3.2"),
     ("Perplexity", "auto"),
+    ("Cloudflare", "llama-3.3-70b"),
     ("Yqcloud", "gpt-4"),
 ]
 
@@ -899,10 +900,40 @@ def get_search_terms(video_subject: str, amount: int, script: str, ai_model: str
     print(colored(f"Response: {response}", "cyan"))
     # Parse response into a list of search terms
     search_terms = []
-    
+
+    def _coerce_terms(value) -> list:
+        """Coerce model output to a list of strings.
+
+        Cookie-free models sometimes return [{"search term 1": "..."}] or
+        {"search terms": [...]} instead of ["..."] — unwrap dicts/lists so
+        callers (", ".join) never crash on non-str items.
+        """
+        if isinstance(value, dict):
+            coerced = []
+            for v in value.values():
+                if isinstance(v, list):
+                    coerced.extend(_coerce_terms(v))
+                elif isinstance(v, str) and v.strip():
+                    coerced.append(v.strip())
+            return coerced
+        if not isinstance(value, list):
+            return []
+        coerced = []
+        for term in value:
+            if isinstance(term, str) and term.strip():
+                coerced.append(term.strip())
+            elif isinstance(term, dict):
+                coerced.extend(
+                    str(v).strip() for v in term.values()
+                    if isinstance(v, str) and str(v).strip()
+                )
+            elif isinstance(term, (int, float)):
+                coerced.append(str(term))
+        return coerced
+
     try:
-        search_terms = json.loads(response)
-        if not isinstance(search_terms, list) or not all(isinstance(term, str) for term in search_terms):
+        search_terms = _coerce_terms(json.loads(response))
+        if not search_terms:
             raise ValueError("Response is not a list of strings.")
 
     except (json.JSONDecodeError, ValueError):
@@ -912,8 +943,20 @@ def get_search_terms(video_subject: str, amount: int, script: str, ai_model: str
         match = re.search(r'\["(?:[^"\\]|\\.)*"(?:,\s*"[^"\\]*")*\]', response)
         if match:
             try:
-                search_terms = json.loads(match.group())
+                search_terms = _coerce_terms(json.loads(match.group()))
             except json.JSONDecodeError:
+                print(colored("[-] Could not parse response.", "red"))
+                return []
+        else:
+            # Last resort for truncated JSON (e.g. '{"search terms":["a", "b"'
+            # cut off mid-stream): salvage the quoted phrases, capped at the
+            # requested amount so essay prose is never mistaken for terms.
+            candidates = [
+                t.strip() for t in re.findall(r'"([^"\\]{2,60})"', response)
+                if t.strip().lower() not in ("search terms", "search term")
+            ]
+            search_terms = candidates[:amount]
+            if not search_terms:
                 print(colored("[-] Could not parse response.", "red"))
                 return []
 

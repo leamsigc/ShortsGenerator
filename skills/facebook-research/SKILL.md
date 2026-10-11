@@ -1,6 +1,6 @@
 ---
 name: facebook-research
-version: 3.0.0
+version: 4.0.0
 description: |
   Facebook page analytics tool with history tracking, competitor analysis,
   HTML report generation, viral engagement opportunity engine, and video
@@ -12,6 +12,10 @@ description: |
   and direct post links, download top 5 reels, transcribe with Whisper,
   analyze transcripts for patterns, and generate a reusable video template
   based on the best-performing video structure.
+  Video Ideas Mode (shared video-idea-research playbook): the 10 videos with
+  the most views in a week/month/year window → outlines → 5 video ideas × 3
+  scripts (viral / storytelling / inspiration) + YouTube metadata (title,
+  description, tags, keywords) → REPORT.html.
   Output: self-contained HTML report with embedded charts.
   Uses Chrome DevTools CLI for all Facebook interactions.
 
@@ -30,11 +34,12 @@ allowed-tools:
 states:
   - facebook-research-setup      — Prerequisites, config (up to 5 competitors), Chrome setup
   - facebook-research-scrape     — Scrape page analytics + competitors + top 10 videos
-  - facebook-research-analyze    — Deep deconstruction of top 5 videos + 5 competitors
+  - facebook-research-analyze    — Deep deconstruction of top 5 videos + 5 competitors + video ideas pipeline
   - facebook-research-report     — REPORT.html (self-contained, charts, competitor links, engagement opps)
   - facebook-research-engage     — Generate engagement opportunities with viral hooks
   - facebook-research-grow       — Follower growth engine ("page audience stealer", goal-driven campaigns)
   - facebook-research-template   — Download → transcribe → analyze → generate reusable video template
+  - video-idea-research          — shared playbook: top-10 videos by views → outlines → 5 ideas → 3 scripts + YouTube metadata
 ---
 
 # Facebook Research — Main Skill (v2.3)
@@ -52,6 +57,25 @@ skill facebook-research-engage      # Step 5: Generate engagement opportunities 
 skill facebook-research-grow        # Step 5b: Grow followers — goal-driven "audience stealer" campaigns (e.g. +200 in 24h)
 skill facebook-research-template    # Step 6: Download reels + transcribe + analyze + generate template
 ```
+
+## Video Ideas Mode
+
+Research a topic (or the page's niche) for the Facebook videos/reels getting
+the most views inside a window and build publishable ideas from them:
+
+```
+facebook-research ideas:<topic> [window:week|month|year] [limit:10] [ideas:5] [length:standard] [lang:es]
+```
+
+Runs the shared `video-idea-research` playbook: top-10 by views (watch pages
+show the count; window from the video dates) → outline extraction (hook /
+beats / CTA / format / duration — Whisper transcripts when needed) → 5 ideas
+drawn from the top 10 → 3 scripts per idea (viral `viral_shorts`,
+storytelling, inspiration `motivational`) → YouTube metadata (title via the
+`youtube-title` rubric, description, tags, keywords) → `video-ideas.json` and
+`REPORT.html` / `ideas-report.md` via
+`node "$CLAUDE_SKILL_ROOT/scripts/build-ideas-report.js" <path>`
+(script ships with the `video-idea-research` skill).
 
 ## Architecture
 

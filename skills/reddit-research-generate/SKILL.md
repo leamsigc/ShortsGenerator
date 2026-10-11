@@ -1,12 +1,14 @@
 ---
 name: reddit-research-generate
-version: 2.0.0
+version: 3.0.0
 description: |
   Generate state — reads scraped Reddit posts from .reddit-research/,
   searches DuckDuckGo for videos related to the SPECIFIC post topic
   (e.g., for a Klopp post: "Jürgen Klopp German national team new era
   video"), appends video URLs to each post's markdown file, then calls
-  the short-generator skill to produce a YouTube Short.
+  the short-generator skill to produce a YouTube Short. Also generates
+  Shorts from the video-ideas pipeline (video-idea-research): each idea's
+  viral script + its media links feed short-generator.
 
 allowed-tools:
   - Bash
@@ -139,7 +141,6 @@ The markdown file already contains:
 - Sourced video URLs
 
 To generate the Short, call the short-generator:
-
 ```
 /short-generator <post_title> voice:M5 hashtags:<keyword1,keyword2> sources:youtube,tiktok,instagram ratio:9:16 music:off subtitle_position:center,bottom
 ```
@@ -166,7 +167,22 @@ Append to each post's markdown file:
 - **Generated At**: <YYYY-MM-DD HH:MM:SS>
 ```
 
-### 6. Report Completion
+### 7. Generate from the Video Ideas Pipeline (`video-ideas.json`)
+
+When the session has `video-ideas.json` (from the `video-idea-research`
+playbook), each idea is already production-ready:
+
+1. Read `.reddit-research/<timestamp>/video-ideas.json`.
+2. Ask the user which idea(s) to produce (rank order by view estimate).
+3. Use the idea's **`scripts.viral`** as the script (or `storytelling` /
+   `inspiration` per the user's pick) — paste-ready, pure spoken text.
+4. Use the idea's **`mediaLinks`** as the sourced video URLs (Step 2 search is
+   then optional — links already collected).
+5. Upload title/description/tags/keywords come from the idea's
+   **`youtube`** metadata block — never invent new ones.
+6. Then run Step 4's short-generator call with those values.
+
+### 8. Report Completion
 
 ```
 ✅ Shorts Generation Complete!

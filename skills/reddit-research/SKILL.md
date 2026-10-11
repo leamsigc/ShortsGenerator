@@ -1,12 +1,17 @@
 ---
 name: reddit-research
-version: 2.0.0
+version: 3.0.0
 description: |
   Reddit content research tool — scrape top posts from any subreddit
   using Reddit's JSON API for accurate data (correct upvotes, comment
   counts), generate viral video scripts in Spanish from post content
   + top comments, search context-relevant videos, and generate
   YouTube Shorts via the short-generator skill.
+  Video Ideas Mode (shared video-idea-research playbook): the top 10 posts
+  of the subreddit/topic by upvotes+comments inside a week/month/year window
+  → outlines → 5 video ideas × 3 scripts (viral / storytelling /
+  inspiration) + YouTube metadata (title, description, tags, keywords) →
+  REPORT.html.
 
 allowed-tools:
   - Bash
@@ -23,6 +28,7 @@ allowed-tools:
 states:
   - reddit-research-scrape    — Scrape Reddit posts via JSON API + generate scripts
   - reddit-research-generate  — Search context-relevant videos & generate Shorts
+  - video-idea-research       — shared playbook: top-10 by views → outlines → 5 ideas → 3 scripts + YouTube metadata
 ---
 
 # Reddit Research — Main Skill (v2)
@@ -33,9 +39,43 @@ Full workflow: Scrape → Generate Shorts
 
 ```
 /reddit-research <subreddit> [limit:<number>]
+/reddit-research ideas:<topic> [window:week|month|year] [ideas:5] [lang:es]
 ```
 
 Example: `/reddit-research soccer limit:10`
+Video ideas: `/reddit-research ideas:futbol mexicano window:month`
+
+## Video Ideas Mode
+
+Reddit has no view counts, so the "most viewed" proxy is **upvotes +
+comments** (Reddit's ranking signal). Run the shared `video-idea-research`
+playbook with `platform:reddit`:
+
+1. **Top 10 inside the window** — JSON API `top?t=week|month|year` (default
+   `t=month`) across the subreddit or a topic search (`q=<topic>`); rank by
+   `score`, tie-break `num_comments`. Real numbers only (JSON API = correct
+   data).
+2. **Outlines** — the selftext + title form the hook; the top 10 comments
+   (already scraped) provide the beats and the community's CTA energy; record
+   format/duration intent.
+3. **5 ideas**, each grounded in ≥2 top posts with their real upvote counts.
+4. **3 scripts per idea** — viral (`viral_shorts`), storytelling
+   (`storytelling`), inspiration (`motivational`) — TTS-ready, `[HOOK]`/`[CTA]`
+   labels only. Backend seeding when available:
+   ```bash
+   curl -s -X POST http://localhost:8080/api/script \
+     -H "Content-Type: application/json" \
+     -d '{"videoSubject":"<idea title>","extraPrompt":"<post + top comments context>","aiModel":"g4f","scriptTemplate":"viral_shorts","scriptLength":"standard"}'
+   ```
+5. **YouTube metadata per idea** (title via the `youtube-title` rubric,
+   description, tags, keywords).
+6. Save `video-ideas.json` in the session folder, then:
+   ```bash
+   node "$CLAUDE_SKILL_ROOT/scripts/build-ideas-report.js" <path-to-video-ideas.json>
+   # fallback: node ./skills/video-idea-research/scripts/build-ideas-report.js <path>
+   ```
+   → `ideas-report.md` + `REPORT.html`: top 10 posts + 5 scripted ideas.
+   Optionally hand the viral script to `skill short-generator` (Phase 2).
 
 ## Architecture
 

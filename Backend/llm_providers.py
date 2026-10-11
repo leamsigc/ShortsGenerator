@@ -34,7 +34,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "outline_enabled": True,  # topic-timeline extraction on process
     "g4f_use_cookies": True,  # g4f Gemini path uses browser cookies; off = cookie-free g4f chain
     "g4f_provider": "DeepAI",  # g4f provider class name (see /llm/g4f-providers)
-    "g4f_model": "gemini-2.5-flash-lite",  # model for the selected g4f provider
+    "g4f_model": "deepseek-v3.2",  # model for the selected g4f provider
     # OFF = fail fast with a clear "model not available" error when the
     # selected model fails. ON = try a backup before giving up.
     "fallback_enabled": False,

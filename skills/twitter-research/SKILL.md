@@ -1,8 +1,8 @@
 ---
 name: twitter-research
-version: 3.0.0
+version: 4.0.0
 description: |
-  Twitter/X content research tool with two modes:
+  Twitter/X content research tool with three modes:
   1. SINGLE-TOPIC MODE — explore 10+ posts across the platform based on a
      TOPIC the user chooses, generate scripts + audience scores + HTML report.
   2. TOPICS MODE — given a broad category (e.g. "futbol mexico europa usa")
@@ -14,6 +14,13 @@ description: |
      the channel's own CTR/view data).
      Optionally hands each topic to the short-generator skill to produce a
      finished Short video from the collected video links + script.
+  3. VIDEO IDEAS MODE — research the topic on X for the video posts getting
+     the most views inside a window (week/month/year), extract each top
+     performer's outline, draw 5 video ideas from the top 10, and write 3
+     scripts per idea (viral / storytelling / inspiration) plus the YouTube
+     metadata block (title, description, tags, keywords). Final report ranks
+     the top 10 videos + the 5 fully-scripted ideas (shared playbook:
+     `skill video-idea-research`).
 
   Uses X search + trending content via Chrome DevTools CLI (no API key
   required).
@@ -36,6 +43,7 @@ states:
   - twitter-research-analyze  — Score audiences, generate content drafts
   - twitter-research-report   — Generate HTML report + engagement responses
   - twitter-research-topics   — TOPICS MODE: auto-detect trending topics in a category, create [topic-research].md files, optionally generate Shorts via short-generator
+  - video-idea-research       — shared playbook: top-10 videos by views → outlines → 5 ideas → 3 scripts each (viral/storytelling/inspiration) → YouTube metadata → REPORT.html
 ---
 
 # Twitter/X Research — Main Skill (v3)
@@ -137,6 +145,33 @@ Runs the full pipeline: research → topic files → optional Short videos.
   # legacy: loose topic-research-*.md at .twitter-research/ root (migrated on next run)
 ```
 
+## Video Ideas Mode
+
+Research the topic on **X video posts** and produce video ideas built from the
+top 10 by views. Full protocol: `skill video-idea-research` (top-10 ranking →
+outline extraction → 5 ideas → viral/storytelling/inspiration scripts →
+YouTube metadata → REPORT.html).
+
+```
+/twitter-research ideas:<topic> [window:week|month|year] [limit:10] [ideas:5] [length:standard] [lang:es]
+```
+
+Examples:
+- `/twitter-research ideas:futbol mexicano window:month`
+- `/twitter-research ideas:"liga mx árbitros" window:week ideas:5 length:short`
+
+### X-specific research notes
+
+| Step | How (X) |
+|------|---------|
+| Collect candidates | `x.com/search?q=<topic>&f=video` (+ `min_faves:` for quality); Latest tab for the window |
+| Window filter | `since:`/`until:` operators (`since:2026-09-10 until:2026-10-10`) or keep only posts timestamped inside the window |
+| Views | open the status page (`/status/<id>`) — the view count is on the analytics row; record real numbers only, else `views: null` |
+| Ranking metric | views inside window; fallback `likes + 2×retweets` when views are hidden |
+| Velocity | `views / ageDays` — breakouts beat big accounts |
+| Outline | caption text = the hook; open the video post + top replies for beats/CTA; download via short-generator when the clip matters |
+| Output | `video-ideas.json` + `ideas-report.md` + `REPORT.html` in the session folder via `node "$CLAUDE_SKILL_ROOT/scripts/build-ideas-report.js" <path>` (script ships with the `video-idea-research` skill) |
+
 ## Single-Topic Mode (original v2 workflow)
 
 ### Workflow
@@ -189,6 +224,7 @@ Runs the full pipeline: research → topic files → optional Short videos.
 | Feature | Description |
 |---------|-------------|
 | Topic-based research | Searches X for a user-chosen topic, collects 10+ posts across accounts |
+| Video ideas mode | Top-10 videos by views → outlines → 5 ideas × 3 scripts + YouTube metadata (via `video-idea-research`) |
 | No API key | Uses Chrome DevTools CLI — works with X's web interface |
 | Engagement responses | 3 pre-written responses per topic post (value add / discussion / agree) |
 | Audience scoring | Scores audience segments 1-10 by engagement potential |
